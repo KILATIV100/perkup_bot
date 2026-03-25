@@ -1,0 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --tg-theme-bg-color: #fdf6ed;
+  --tg-theme-text-color: #111827;
+  --tg-theme-hint-color: #6b7280;
+  --tg-theme-link-color: #6b3a2a;
+  --tg-theme-button-color: #6b3a2a;
+  --tg-theme-button-text-color: #ffffff;
+  --color-coffee: #6b3a2a;
+  --color-gold: #c8973a;
+  --color-cream: #fdf6ed;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--tg-theme-bg-color, #fdf6ed);
+  color: var(--tg-theme-text-color, #111827);
+  overscroll-behavior: none;
+  overflow-x: hidden;
+}
+
+/* Bottom nav safe area */
+.pb-safe {
+  padding-bottom: calc(60px + var(--safe-bottom));
+}
+
+/* Scrollbar hidden */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Skeleton animation */
+.skeleton {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Cart badge bounce */
+.badge-bounce {
+  animation: badgeBounce 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+@keyframes badgeBounce {
+  0% { transform: scale(0.5); }
+  100% { transform: scale(1); }
+}
+
+/* Bottom sheet */
+.bottom-sheet-overlay {
+  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.5);
+}
