@@ -193,10 +193,10 @@ async function main() {
   // ─── OWNER USER ───────────────────────────────────────────────
   // Create owner account (update telegramId to your real one)
   const owner = await prisma.user.upsert({
-    where: { telegramId: BigInt(999999999) }, // Replace with real Telegram ID
+    where: { telegramId: BigInt(7363233852) },
     update: { role: 'OWNER' },
     create: {
-      telegramId: BigInt(999999999),
+      telegramId: BigInt(7363233852),
       firstName: 'Віталій',
       role: 'OWNER',
       onboardingDone: true,
