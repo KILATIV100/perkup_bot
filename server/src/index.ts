@@ -15,6 +15,8 @@ import adminRoutes from './routes/admin'
 import mediaRoutes from './routes/media'
 import healthRoutes from './routes/health'
 import posterWebhookRoutes from './routes/webhooks/poster'
+import { schedulePosterSync, startPosterSyncWorker } from './workers/posterSync'
+import { syncAllLocations } from './services/poster'
 
 const app = Fastify({
   logger: { level: 'info' },
@@ -67,24 +69,35 @@ async function bootstrap() {
     return reply.status(500).send({ success: false, error: 'Internal server error' })
   })
 
-  // Start listening FIRST — so Railway healthcheck passes
   const port = parseInt(process.env.PORT || '3000')
   await app.listen({ port, host: '0.0.0.0' })
-  console.log(`🚀 PerkUp Server running on port ${port}`)
+  console.log('PerkUp Server running on port ' + port)
 
-  // Connect DB & Redis AFTER server is up
   try {
     await prisma.$connect()
-    console.log('✅ PostgreSQL connected')
+    console.log('PostgreSQL connected')
   } catch (err) {
-    console.error('⚠️ PostgreSQL error:', (err as Error).message)
+    console.error('PostgreSQL error:', (err as Error).message)
   }
 
   try {
     await redis.ping()
-    console.log('✅ Redis connected')
+    console.log('Redis connected')
   } catch (err) {
-    console.error('⚠️ Redis error:', (err as Error).message)
+    console.error('Redis error:', (err as Error).message)
+  }
+
+  try {
+    startPosterSyncWorker()
+    await schedulePosterSync()
+    console.log('Poster sync worker started')
+    setTimeout(async () => {
+      console.log('[Poster] Running initial sync...')
+      await syncAllLocations()
+      console.log('[Poster] Initial sync done')
+    }, 8000)
+  } catch (err) {
+    console.error('Poster sync error:', (err as Error).message)
   }
 }
 
