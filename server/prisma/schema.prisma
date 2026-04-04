@@ -146,7 +146,7 @@ model WorkingHours {
 model Product {
   id              Int      @id @default(autoincrement())
   locationId      Int
-  posterProductId String?  @unique
+  posterProductId String?
   name            String
   description     String?
   ingredients     String?
@@ -171,6 +171,7 @@ model Product {
 
   @@index([locationId, category, isAvailable])
   @@index([locationId, ordersCount])
+  @@unique([locationId, posterProductId])
 }
 
 // ─── BUNDLE ───────────────────────────────────────────────────────
