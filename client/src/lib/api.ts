@@ -38,6 +38,8 @@ api.interceptors.response.use(
 export const authApi = {
   loginWithTelegram: (initData: string) =>
     api.post('/api/auth/telegram', { initData }),
+  devLogin: (telegramId?: number, firstName?: string) =>
+    api.post('/api/auth/dev-login', { telegramId, firstName }),
   getMe: () => api.get('/api/auth/me'),
   completeOnboarding: (data: {
     preferredLocationId?: number
