@@ -33,22 +33,40 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   const data = await res.json() as any
   if (!data.response) throw new Error('Bad Poster response')
   const products = Array.isArray(data.response) ? data.response : Object.values(data.response as Record<string, unknown>)
+  const syncedPosterIds = new Set<string>()
   console.log('[Poster] ' + products.length + ' products for ' + locationSlug)
   for (const item of products as any[]) {
     try {
+      const posterProductId = String(item.product_id)
+      syncedPosterIds.add(posterProductId)
       const price = parseFloat(item.product_price || '0') / 100
       let imageUrl: string | undefined
       if (item.photo && item.photo !== '0') {
         imageUrl = String(item.photo).startsWith('http') ? item.photo : 'https://' + loc.subdomain + '.joinposter.com' + item.photo
       }
       await prisma.product.upsert({
-        where: { posterProductId: String(item.product_id) },
+        where: {
+          locationId_posterProductId: {
+            locationId: location.id,
+            posterProductId,
+          },
+        },
         update: { name: item.product_name, price, category: mapCategory(item.category_name || ''), imageUrl, isAvailable: item.out !== 1, description: item.product_production_description || null },
-        create: { locationId: location.id, posterProductId: String(item.product_id), name: item.product_name, price, category: mapCategory(item.category_name || ''), imageUrl, isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
+        create: { locationId: location.id, posterProductId, name: item.product_name, price, category: mapCategory(item.category_name || ''), imageUrl, isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
       })
       synced++
     } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
   }
+
+  // Keep local menu aligned with Poster: hide products no longer present in Poster response.
+  await prisma.product.updateMany({
+    where: {
+      locationId: location.id,
+      posterProductId: { not: null, notIn: [...syncedPosterIds] },
+    },
+    data: { isAvailable: false },
+  })
+
   await redis.del('menu:' + locationSlug)
   return { synced, errors }
 }
