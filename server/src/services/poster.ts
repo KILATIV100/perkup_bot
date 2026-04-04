@@ -40,10 +40,6 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
       const posterProductId = String(item.product_id)
       syncedPosterIds.add(posterProductId)
       const price = parseFloat(item.product_price || '0') / 100
-      let imageUrl: string | undefined
-      if (item.photo && item.photo !== '0') {
-        imageUrl = String(item.photo).startsWith('http') ? item.photo : 'https://' + loc.subdomain + '.joinposter.com' + item.photo
-      }
       await prisma.product.upsert({
         where: {
           locationId_posterProductId: {
@@ -51,8 +47,10 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
             posterProductId,
           },
         },
-        update: { name: item.product_name, price, category: mapCategory(item.category_name || ''), imageUrl, isAvailable: item.out !== 1, description: item.product_production_description || null },
-        create: { locationId: location.id, posterProductId, name: item.product_name, price, category: mapCategory(item.category_name || ''), imageUrl, isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
+        // We intentionally do not sync external Poster image links into menu items.
+        // Media must be managed via approved channels (e.g. Telegram file storage/proxy).
+        update: { name: item.product_name, price, category: mapCategory(item.category_name || ''), isAvailable: item.out !== 1, description: item.product_production_description || null },
+        create: { locationId: location.id, posterProductId, name: item.product_name, price, category: mapCategory(item.category_name || ''), isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
       })
       synced++
     } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
