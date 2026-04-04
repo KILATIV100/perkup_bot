@@ -2,7 +2,10 @@ import { Queue, Worker } from 'bullmq'
 import { redis } from '../lib/redis'
 import { syncAllLocations } from '../services/poster'
 
-const connection = redis
+// BullMQ requires maxRetriesPerRequest=null for worker/blocking commands.
+// Use a dedicated duplicated Redis connection so API caching/rate-limit
+// connection settings can stay unchanged.
+const connection = redis.duplicate({ maxRetriesPerRequest: null })
 
 export const posterSyncQueue = new Queue('poster-sync', { connection })
 
