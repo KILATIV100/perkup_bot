@@ -9,6 +9,7 @@ import authRoutes from './routes/auth'
 import locationRoutes from './routes/locations'
 import menuRoutes from './routes/menu'
 import orderRoutes from './routes/orders'
+import shiftsRoutes from './routes/shifts'
 import loyaltyRoutes from './routes/loyalty'
 import adminRoutes from './routes/admin'
 import mediaRoutes from './routes/media'
@@ -31,6 +32,7 @@ async function bootstrap() {
   await app.register(locationRoutes,      { prefix: '/api/locations' })
   await app.register(menuRoutes,          { prefix: '/api/menu' })
   await app.register(orderRoutes,         { prefix: '/api/orders' })
+  await app.register(shiftsRoutes,        { prefix: '/api/shifts' })
   await app.register(loyaltyRoutes,       { prefix: '/api/loyalty' })
   await app.register(adminRoutes,         { prefix: '/api/admin' })
   await app.register(mediaRoutes,         { prefix: '/api/media' })
