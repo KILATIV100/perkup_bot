@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { menuApi } from '../lib/api'
+import { menuApi, ordersApi } from '../lib/api'
 import { useLocationStore } from '../stores/location'
+import { useCartStore } from '../stores/cart'
 
 type MenuProduct = {
   id: number
@@ -21,6 +22,13 @@ type MenuCategory = {
 export default function MenuPage() {
   const { activeLocation } = useLocationStore()
   const [search, setSearch] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('card')
+  const [checkoutMsg, setCheckoutMsg] = useState('')
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+
+  const { items, addItem, clearCart, getTotalItems, getTotalPrice, clearIfDifferentLocation } = useCartStore()
+  const totalItems = getTotalItems()
+  const totalPrice = getTotalPrice()
 
   const menuQuery = useQuery({
     queryKey: ['menu', activeLocation?.slug, search],
@@ -32,6 +40,39 @@ export default function MenuPage() {
   })
 
   const categories = useMemo<MenuCategory[]>(() => menuQuery.data?.categories || [], [menuQuery.data])
+
+  const checkout = async () => {
+    if (!activeLocation) return
+    if (!items.length) return
+
+    setCheckoutLoading(true)
+    setCheckoutMsg('')
+    try {
+      const orderRes = await ordersApi.create({
+        locationId: activeLocation.id,
+        paymentMethod,
+        items: items.map((i) => ({
+          productId: i.productId,
+          bundleId: i.bundleId,
+          quantity: i.quantity,
+          modifiers: i.modifiers,
+        })),
+      })
+
+      let finalOrder = orderRes.data.order
+      if (paymentMethod === 'card') {
+        const payRes = await ordersApi.pay(orderRes.data.order.id, `manual_${Date.now()}`)
+        finalOrder = payRes.data.order
+      }
+
+      clearCart()
+      setCheckoutMsg(`✅ Замовлення #${finalOrder.id} створено (${finalOrder.status})`)
+    } catch (e: any) {
+      setCheckoutMsg(e?.response?.data?.error || 'Помилка створення замовлення')
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
 
   if (!activeLocation) {
     return <div className="p-4 text-gray-500">Оберіть точку у хедері, щоб переглянути меню.</div>
@@ -62,7 +103,7 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4 pb-28">
       {!activeLocation.allowOrders && activeLocation.slug === 'mark-mall' && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 text-sm">
           🏪 Самообслуговування — обери позиції та підійди до каси.
@@ -86,12 +127,49 @@ export default function MenuPage() {
                   <div className="font-semibold text-gray-900">{p.name}</div>
                   {p.description && <div className="text-sm text-gray-500 mt-1">{p.description}</div>}
                 </div>
-                <div className="font-bold text-coffee-700 whitespace-nowrap">{Number(p.price).toFixed(0)} грн</div>
+                <div className="text-right">
+                  <div className="font-bold text-coffee-700 whitespace-nowrap">{Number(p.price).toFixed(0)} грн</div>
+                  {activeLocation.allowOrders && (
+                    <button
+                      onClick={() => {
+                        clearIfDifferentLocation(activeLocation.id)
+                        addItem({
+                          productId: p.id,
+                          name: p.name,
+                          price: Number(p.price),
+                          quantity: 1,
+                          locationId: activeLocation.id,
+                        })
+                      }}
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-coffee-600 text-white text-sm"
+                    >
+                      Додати
+                    </button>
+                  )}
+                </div>
               </div>
             </article>
           ))}
         </section>
       ))}
+
+      {checkoutMsg && <div className="text-sm text-gray-700 bg-white rounded-xl p-3 border">{checkoutMsg}</div>}
+
+      {activeLocation.allowOrders && totalItems > 0 && (
+        <div className="fixed left-3 right-3 bottom-20 z-40 bg-white border border-gray-200 rounded-2xl p-3 shadow-xl space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span>У кошику: {totalItems}</span>
+            <span className="font-bold">{totalPrice.toFixed(0)} грн</span>
+          </div>
+          <div className="flex gap-2">
+            <button className={`px-3 py-1.5 rounded-lg border ${paymentMethod === 'card' ? 'bg-coffee-600 text-white' : 'bg-white'}`} onClick={() => setPaymentMethod('card')}>Картка</button>
+            <button className={`px-3 py-1.5 rounded-lg border ${paymentMethod === 'cash' ? 'bg-coffee-600 text-white' : 'bg-white'}`} onClick={() => setPaymentMethod('cash')}>Готівка</button>
+          </div>
+          <button disabled={checkoutLoading} onClick={checkout} className="w-full px-4 py-2 rounded-xl bg-coffee-700 text-white disabled:opacity-60">
+            {checkoutLoading ? 'Обробка...' : 'Замовити та оплатити'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

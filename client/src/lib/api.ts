@@ -68,6 +68,7 @@ export const menuApi = {
 // Orders
 export const ordersApi = {
   create: (data: any) => api.post('/api/orders', data),
+  pay: (id: number, paymentId: string) => api.post(`/api/orders/${id}/pay`, { paymentId }),
   getMyOrders: (page = 1) => api.get('/api/orders', { params: { page } }),
   getById: (id: number) => api.get(`/api/orders/${id}`),
   cancel: (id: number) => api.delete(`/api/orders/${id}`),
