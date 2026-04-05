@@ -191,4 +191,75 @@ export async function createIncomingOrderInPoster(orderId: number) {
     console.error(`Error pushing order ${orderId} to Poster:`, error);
     throw error;
   }
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      posterOrderId: String(posterOrderId),
+      status: 'SENT_TO_POS',
+    },
+  });
+
+  return response.data.response;
+}
+
+export const createPosterClient = (token: string) => {
+  return axios.create({
+    baseURL: 'https://joinposter.com/api',
+    params: { token },
+  });
+};
+
+export async function createIncomingOrderInPoster(orderId: number) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true, user: true, location: true },
+  });
+
+  if (!order) throw new Error('Order not found');
+  if (!order.location.hasPoster || !order.location.posterToken || !order.location.posterSpotId) {
+    throw new Error('Location is not configured for Poster POS');
+  }
+
+  const posterApi = createPosterClient(order.location.posterToken);
+  const products = order.items
+    .filter((item) => !!item.productId)
+    .map((item) => ({
+      product_id: item.productId,
+      count: item.quantity,
+      price: Number(item.price),
+    }));
+
+  const payload = {
+    spot_id: order.location.posterSpotId,
+    phone: order.user.username || '',
+    products,
+    payment: {
+      type: 0,
+      sum: 0,
+      currency: 'UAH',
+    },
+    comment: `TG Замовлення #${String(order.id).slice(-4)}\nГість: ${order.user.firstName}`,
+  };
+
+  const response = await posterApi.post('/incomingOrders.createIncomingOrder', payload);
+
+  if (response.data?.error) {
+    throw new Error(`Poster Error: ${response.data.error}`);
+  }
+
+  const posterOrderId = response.data?.response?.incoming_order_id;
+  if (!posterOrderId) {
+    throw new Error('Poster response does not contain incoming_order_id');
+  }
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      posterOrderId: String(posterOrderId),
+      status: 'SENT_TO_POS',
+    },
+  });
+
+  return response.data.response;
 }
