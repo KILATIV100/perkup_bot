@@ -23,6 +23,23 @@ function mapCategory(categoryId: string): string {
   return CATEGORY_ID_MAP[categoryId] || 'other'
 }
 
+function parsePrice(item: any): number {
+  // Poster зберігає ціни в об'єкті price по spot_id, в копійках
+  // Спробуємо price["1"] (перший spot) або product_price
+  if (item.price && typeof item.price === 'object') {
+    const spotPrices = Object.values(item.price as Record<string, string>)
+    if (spotPrices.length > 0) {
+      const kopecks = parseFloat(String(spotPrices[0])) || 0
+      return kopecks / 100
+    }
+  }
+  // Fallback до product_price
+  if (item.product_price) {
+    return parseFloat(String(item.product_price)) / 100
+  }
+  return 0
+}
+
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
   const loc = LOCATIONS.find(l => l.slug === locationSlug)
   if (!loc || !loc.token) throw new Error('No config for ' + locationSlug)
@@ -46,7 +63,7 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
 
   for (const item of products as any[]) {
     try {
-      const price = parseFloat(item.product_price || '0') / 100
+      const price = parsePrice(item)
       const categoryId = String(item.menu_category_id || '0')
       const category = mapCategory(categoryId)
       const posterProductId = String(item.product_id)
@@ -59,7 +76,6 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
           : 'https://' + loc.subdomain + '.joinposter.com' + photo + '.jpg'
       }
 
-      // Use findFirst + update/create instead of upsert (avoids unique constraint issue)
       const existing = await prisma.product.findFirst({
         where: { posterProductId },
       })
