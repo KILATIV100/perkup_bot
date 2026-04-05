@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma'
-import { redis } from '../lib/redis'
+import { redisCache } from '../lib/redis'
 
 const LOCATIONS = [
   { slug: 'krona', subdomain: process.env.POSTER_KRONA_SUBDOMAIN || 'perkup2', token: process.env.POSTER_KRONA_TOKEN || '' },
@@ -91,6 +91,7 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   if (!loc || !loc.token) throw new Error('No config for ' + locationSlug)
   const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
   if (!location) throw new Error('Location not found: ' + locationSlug)
+
   const errors: string[] = []
   let synced = 0
   // IMPORTANT: do not pass type=products here.
@@ -103,6 +104,7 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   const products = Array.isArray(data.response) ? data.response : Object.values(data.response as Record<string, unknown>)
   const syncedPosterIds = new Set<string>()
   console.log('[Poster] ' + products.length + ' products for ' + locationSlug)
+
   for (const item of products as any[]) {
     try {
       const posterProductId = firstDefinedString(item.product_id, item.productid, item.id)
@@ -130,8 +132,39 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
         update: { name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null },
         create: { locationId: location.id, posterProductId, name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null, allergens: [], tags: [] },
       })
+
+      if (existing) {
+        await prisma.product.update({
+          where: { id: existing.id },
+          data: {
+            name: item.product_name,
+            price,
+            category,
+            imageUrl,
+            isAvailable: item.out !== 1,
+            description: item.product_production_description || null,
+          },
+        })
+      } else {
+        await prisma.product.create({
+          data: {
+            locationId: location.id,
+            posterProductId,
+            name: item.product_name,
+            price,
+            category,
+            imageUrl,
+            isAvailable: item.out !== 1,
+            description: item.product_production_description || null,
+            allergens: [],
+            tags: [],
+          },
+        })
+      }
       synced++
-    } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
+    } catch (err: any) {
+      errors.push(item.product_id + ': ' + err.message)
+    }
   }
 
   if (errors.length) {
@@ -153,6 +186,10 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
 
 export async function syncAllLocations(): Promise<void> {
   for (const loc of LOCATIONS) {
-    try { await syncPosterMenu(loc.slug) } catch (err: any) { console.error('[Poster] Failed ' + loc.slug, err.message) }
+    try {
+      await syncPosterMenu(loc.slug)
+    } catch (err: any) {
+      console.error('[Poster] Failed ' + loc.slug, err.message)
+    }
   }
 }
