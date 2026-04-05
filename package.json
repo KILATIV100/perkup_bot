@@ -12,8 +12,16 @@
     "db:push": "npm run db:push --prefix server",
     "db:migrate": "npm run db:migrate --prefix server",
     "db:seed": "npm run db:seed --prefix server",
-    "db:studio": "npm run db:studio --prefix server"
+    "db:studio": "npm run db:studio --prefix server",
+    "build": "npm install --prefix server && npm run build --prefix server && rm -rf dist && cp -R server/dist dist",
+    "start": "NODE_PATH=server/node_modules node dist/index.js"
   },
-  "keywords": ["telegram", "mini-app", "coffee", "fastify", "prisma"],
+  "keywords": [
+    "telegram",
+    "mini-app",
+    "coffee",
+    "fastify",
+    "prisma"
+  ],
   "license": "MIT"
 }
