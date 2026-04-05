@@ -49,6 +49,43 @@ function mapCategory(item: any): string {
   return 'coffee'
 }
 
+function firstDefinedString(...values: any[]): string {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      const str = String(value).trim()
+      if (str) return str
+    }
+  }
+  return ''
+}
+
+// Poster price can be a string/number in cents, or an object per spot.
+function extractPriceUah(item: any): number {
+  const rawCandidates = [item.product_price, item.price, item.menu_price]
+
+  for (const raw of rawCandidates) {
+    if (raw === undefined || raw === null) continue
+
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) ? raw / 100 : 0
+    }
+
+    if (typeof raw === 'string') {
+      const n = parseFloat(raw)
+      if (Number.isFinite(n)) return n / 100
+    }
+
+    if (typeof raw === 'object') {
+      for (const value of Object.values(raw)) {
+        const n = parseFloat(String(value))
+        if (Number.isFinite(n)) return n / 100
+      }
+    }
+  }
+
+  return 0
+}
+
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
   const loc = LOCATIONS.find(l => l.slug === locationSlug)
   if (!loc || !loc.token) throw new Error('No config for ' + locationSlug)
@@ -68,10 +105,19 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   console.log('[Poster] ' + products.length + ' products for ' + locationSlug)
   for (const item of products as any[]) {
     try {
-      const posterProductId = String(item.product_id)
+      const posterProductId = firstDefinedString(item.product_id, item.productid, item.id)
+      if (!posterProductId) {
+        errors.push('unknown-id: empty product id')
+        continue
+      }
       syncedPosterIds.add(posterProductId)
-      const price = parseFloat(item.product_price || '0') / 100
+      const price = extractPriceUah(item)
       const category = mapCategory(item)
+      const name = firstDefinedString(item.product_name, item.name, item.product_title)
+      if (!name) {
+        errors.push(`${posterProductId}: empty product name`)
+        continue
+      }
       await prisma.product.upsert({
         where: {
           locationId_posterProductId: {
@@ -81,11 +127,15 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
         },
         // We intentionally do not sync external Poster image links into menu items.
         // Media must be managed via approved channels (e.g. Telegram file storage/proxy).
-        update: { name: item.product_name, price, category, isAvailable: item.out !== 1, description: item.product_production_description || null },
-        create: { locationId: location.id, posterProductId, name: item.product_name, price, category, isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
+        update: { name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null },
+        create: { locationId: location.id, posterProductId, name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null, allergens: [], tags: [] },
       })
       synced++
     } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
+  }
+
+  if (errors.length) {
+    console.warn(`[Poster] ${locationSlug} sync warnings: ${errors.length}`)
   }
 
   // Keep local menu aligned with Poster: hide products no longer present in Poster response.
