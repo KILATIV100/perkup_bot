@@ -1,4 +1,389 @@
-generator client {  provider = "prisma-client-js"}datasource db {  provider = "postgresql"  url      = env("DATABASE_URL")}// ─── ENUMS ────────────────────────────────────────────────────────enum Role {  USER  BARISTA  ADMIN  OWNER}enum OrderStatus {  PAYMENT_PENDING  PENDING  ACCEPTED  PREPARING  READY  COMPLETED  CANCELLED  AUTO_EXPIRED  UNASSIGNED}enum GameType {  TIC_TAC_TOE  PERKIE_CATCH  BARISTA_RUSH  MEMORY_COFFEE  PERKIE_JUMP
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  BARISTA
+  ADMIN
+  OWNER
+}
+
+enum OrderStatus {
+  PAYMENT_PENDING
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+  AUTO_EXPIRED
+  UNASSIGNED
+}
+
+enum GameType {
+  TIC_TAC_TOE
+  PERKIE_CATCH
+  BARISTA_RUSH
+  MEMORY_COFFEE
+  PERKIE_JUMP
+}
+
+enum TransactionType {
+  SPIN
+  ORDER
+  REFERRAL
+  REDEEM
+  GAME
+  BIRTHDAY
+  BONUS
+  EXPIRED
+  ADMIN
+}
+
+// ─── USER ─────────────────────────────────────────────────────────
+
+model User {
+  id                  Int       @id @default(autoincrement())
+  telegramId          BigInt    @unique
+  username            String?
+  firstName           String
+  lastName            String?
+  role                Role      @default(USER)
+  points              Int       @default(0)
+  level               String    @default("BRONZE")
+  monthlyOrders       Int       @default(0)
+  lastSpinDate        String?
+  birthDate           DateTime?
+  lastBirthdayBonus   Int?
+  lastActivity        DateTime  @default(now())
+  referredById        Int?
+  referredBy          User?     @relation("Referrals", fields: [referredById], references: [id])
+  referrals           User[]    @relation("Referrals")
+  referralBonusPaid   Boolean   @default(false)
+  preferredLocationId Int?
+  language            String    @default("uk")
+  noShowCount         Int       @default(0)
+  cashPaymentBlocked  Boolean   @default(false)
+  notifSpin           Boolean   @default(true)
+  notifWinback        Boolean   @default(true)
+  notifMorning        Boolean   @default(true)
+  notifPromo          Boolean   @default(true)
+  onboardingDone      Boolean   @default(false)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  orders              Order[]
+  shifts              Shift[]
+  transactions        PointsTransaction[]
+  redemptions         RedemptionCode[]
+  gameSessions        GameSession[]
+  tips                Tip[]
+  reviews             Review[]
+
+  @@index([telegramId])
+  @@index([role])
+  @@index([lastActivity])
+}
+
+// ─── LOCATION ─────────────────────────────────────────────────────
+
+model Location {
+  id                  Int      @id @default(autoincrement())
+  slug                String   @unique
+  name                String
+  address             String
+  lat                 Float
+  lng                 Float
+  radius              Int      @default(100)
+  allowOrders         Boolean  @default(false)
+  posterSubdomain     String?
+  posterAccount       String?
+  posterToken         String?
+  googlePlaceId       String?
+  googleMapsUrl       String?
+  busyMode            Boolean  @default(false)
+  busyModeUntil       DateTime?
+  maxQueueSize        Int      @default(10)
+  hasPrinter          Boolean  @default(false)
+  printerIp           String?
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  products            Product[]
+  bundles             Bundle[]
+  orders              Order[]
+  shifts              Shift[]
+  workingHours        WorkingHours[]
+  reviews             Review[]
+
+  @@index([slug])
+}
+
+model WorkingHours {
+  id          Int      @id @default(autoincrement())
+  locationId  Int
+  dayOfWeek   Int      // 0=Sun, 1=Mon ... 6=Sat
+  openTime    String   // "08:00"
+  closeTime   String   // "22:00"
+  isClosed    Boolean  @default(false)
+  location    Location @relation(fields: [locationId], references: [id])
+
+  @@unique([locationId, dayOfWeek])
+}
+
+// ─── PRODUCT ──────────────────────────────────────────────────────
+
+model Product {
+  id              Int      @id @default(autoincrement())
+  locationId      Int
+  posterProductId String?
+  name            String
+  description     String?
+  ingredients     String?
+  price           Decimal  @db.Decimal(10, 2)
+  category        String
+  telegramFileId  String?
+  imageUrl        String?
+  calories        Int?
+  volume          String?
+  allergens       String[] @default([])
+  tags            String[] @default([])
+  modifiers       Json?
+  isAvailable     Boolean  @default(true)
+  ordersCount     Int      @default(0)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  location        Location    @relation(fields: [locationId], references: [id])
+  orderItems      OrderItem[]
+  bundleItems     BundleItem[]
+
+  @@index([locationId, category, isAvailable])
+  @@index([locationId, ordersCount])
+  @@unique([locationId, posterProductId])
+}
+
+// ─── BUNDLE ───────────────────────────────────────────────────────
+
+model Bundle {
+  id             Int          @id @default(autoincrement())
+  locationId     Int
+  name           String
+  description    String?
+  price          Decimal      @db.Decimal(10, 2)
+  originalPrice  Decimal      @db.Decimal(10, 2)
+  discountPct    Int
+  telegramFileId String?
+  imageUrl       String?
+  isAvailable    Boolean      @default(true)
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  location       Location     @relation(fields: [locationId], references: [id])
+  items          BundleItem[]
+  orderItems     OrderItem[]
+}
+
+model BundleItem {
+  id        Int     @id @default(autoincrement())
+  bundleId  Int
+  productId Int
+  quantity  Int     @default(1)
+
+  bundle    Bundle  @relation(fields: [bundleId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+// ─── ORDER ────────────────────────────────────────────────────────
+
+model Order {
+  id             Int         @id @default(autoincrement())
+  userId         Int
+  locationId     Int
+  shiftId        Int?
+  status         OrderStatus @default(PAYMENT_PENDING)
+  posterOrderId  Int?
+  total          Decimal     @db.Decimal(10, 2)
+  discount       Decimal     @default(0) @db.Decimal(10, 2)
+  promoCode      String?
+  paymentMethod  String      @default("cash")
+  paymentId      String?
+  pointsUsed     Int         @default(0)
+  pickupTime     DateTime?
+  estimatedReady DateTime?
+  qrCode         String?     @unique
+  comment        String?
+  isRepeat       Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user           User        @relation(fields: [userId], references: [id])
+  location       Location    @relation(fields: [locationId], references: [id])
+  shift          Shift?      @relation(fields: [shiftId], references: [id])
+  items          OrderItem[]
+  review         Review?
+  tip            Tip?
+
+  @@index([userId, createdAt])
+  @@index([locationId, status])
+  @@index([shiftId])
+}
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  productId  Int?
+  bundleId   Int?
+  name       String
+  price      Decimal  @db.Decimal(10, 2)
+  quantity   Int      @default(1)
+  modifiers  Json?
+
+  order      Order    @relation(fields: [orderId], references: [id])
+  product    Product? @relation(fields: [productId], references: [id])
+  bundle     Bundle?  @relation(fields: [bundleId], references: [id])
+}
+
+// ─── SHIFT ────────────────────────────────────────────────────────
+
+model Shift {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  locationId  Int
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  ordersCount Int       @default(0)
+  avgRating   Float?
+  totalTips   Decimal   @default(0) @db.Decimal(10, 2)
+
+  user        User      @relation(fields: [userId], references: [id])
+  location    Location  @relation(fields: [locationId], references: [id])
+  orders      Order[]
+  tips        Tip[]
+
+  @@index([locationId, endedAt])
+  @@index([userId, startedAt])
+}
+
+// ─── LOYALTY ──────────────────────────────────────────────────────
+
+model PointsTransaction {
+  id              Int             @id @default(autoincrement())
+  userId          Int
+  amount          Int
+  type            TransactionType
+  description     String
+  idempotencyKey  String          @unique
+  createdAt       DateTime        @default(now())
+
+  user            User            @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([type])
+}
+
+model RedemptionCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  code      String    @unique
+  points    Int
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([code])
+  @@index([expiresAt])
+}
+
+// ─── PROMO ────────────────────────────────────────────────────────
+
+model Promo {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  type        String    // "PERCENT" | "FIXED" | "POINTS"
+  value       Decimal   @db.Decimal(10, 2)
+  locationId  Int?
+  maxUses     Int?
+  usedCount   Int       @default(0)
+  minOrderSum Decimal?  @db.Decimal(10, 2)
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  @@index([code, isActive])
+}
+
+// ─── REVIEW ───────────────────────────────────────────────────────
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  orderId    Int      @unique
+  userId     Int
+  locationId Int
+  shiftId    Int?
+  rating     Int
+  text       String?
+  isPublic   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  order      Order    @relation(fields: [orderId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id])
+
+  @@index([locationId, createdAt])
+  @@index([shiftId])
+}
+
+// ─── TIP ──────────────────────────────────────────────────────────
+
+model Tip {
+  id        Int      @id @default(autoincrement())
+  orderId   Int      @unique
+  userId    Int
+  shiftId   Int
+  amount    Decimal  @db.Decimal(10, 2)
+  paymentId String?
+  createdAt DateTime @default(now())
+
+  order     Order    @relation(fields: [orderId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  shift     Shift    @relation(fields: [shiftId], references: [id])
+}
+
+// ─── GAME ─────────────────────────────────────────────────────────
+
+model GameSession {
+  id         String    @id @default(cuid())
+  type       GameType
+  player1Id  Int
+  player2Id  Int?
+  boardState Json
+  status     String    @default("active")
+  winnerId   Int?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  player1    User      @relation(fields: [player1Id], references: [id])
+
+  @@index([player1Id, status])
+  @@index([expiresAt])
+}
+
+// ─── RADIO ────────────────────────────────────────────────────────
 
 model RadioTrack {
   id        Int      @id @default(autoincrement())

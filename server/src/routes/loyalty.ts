@@ -1,184 +1,133 @@
 import { FastifyInstance } from 'fastify'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import { prisma } from '../lib/prisma'
-import crypto from 'crypto'
+import { acquireLock, releaseLock } from '../lib/redis'
+import { authenticate } from '../plugins/auth'
 
-const BOT = process.env.BOT_TOKEN || ''
+const spinSchema = z.object({
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+})
 
-async function tgSend(chatId: string, text: string) {
-  if (!BOT) return
-  try {
-    await fetch('https://api.telegram.org/bot' + BOT + '/sendMessage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
-    })
-  } catch (e) {
-    console.error('tgSend error:', e)
-  }
+function kyivDateString(date = new Date()): string {
+  const kyiv = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }))
+  const y = kyiv.getFullYear()
+  const m = String(kyiv.getMonth() + 1).padStart(2, '0')
+  const d = String(kyiv.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
-function getLevelMultiplier(points: number): number {
-  if (points >= 3000) return 1.3
-  if (points >= 1000) return 1.2
-  if (points >= 300) return 1.1
-  return 1.0
+function rollSpin(): number {
+  const r = Math.random()
+  if (r < 0.30) return 5
+  if (r < 0.55) return 10
+  if (r < 0.70) return 15
+  return 0
 }
-
-function getLevel(points: number): string {
-  if (points >= 3000) return 'Platinum'
-  if (points >= 1000) return 'Gold'
-  if (points >= 300) return 'Silver'
-  return 'Bronze'
-}
-
-function getNextLevel(points: number): { name: string; required: number } | null {
-  if (points < 300) return { name: 'Silver', required: 300 }
-  if (points < 1000) return { name: 'Gold', required: 1000 }
-  if (points < 3000) return { name: 'Platinum', required: 3000 }
-  return null
-}
-
-const WHEEL_PRIZES = [
-  { id: 'points20',  label: '+20 baliv',      emoji: '\u2B50', type: 'points',   value: 20,  weight: 20 },
-  { id: 'points10',  label: '+10 baliv',      emoji: '\u2B50', type: 'points',   value: 10,  weight: 17 },
-  { id: 'upgrade',   label: 'Apgrejd napoju', emoji: '\u2615', type: 'voucher',  value: 100, weight: 12 },
-  { id: 'discount',  label: '-10% znyzhka',   emoji: '\uD83D\uDD25', type: 'discount', value: 10, weight: 10 },
-  { id: 'sweet',     label: 'Solodoshchi',    emoji: '\uD83C\uDF70', type: 'voucher',  value: 100, weight: 8  },
-  { id: 'coffee',    label: 'Kava v podarok', emoji: '\u2615', type: 'voucher',  value: 100, weight: 5  },
-  { id: 'sticker',   label: 'Sticer PerkUp',  emoji: '\uD83C\uDF81', type: 'physical', value: 0, weight: 3  },
-  { id: 'nothing',   label: 'Ne poschastylo', emoji: '\uD83D\uDE14', type: 'nothing',  value: 0,  weight: 25 },
-]
-
-function spinWheel(): typeof WHEEL_PRIZES[0] {
-  const total = WHEEL_PRIZES.reduce((s, p) => s + p.weight, 0)
-  let rand = Math.random() * total
-  for (const prize of WHEEL_PRIZES) {
-    rand -= prize.weight
-    if (rand <= 0) return prize
-  }
-  return WHEEL_PRIZES[WHEEL_PRIZES.length - 1]
-}
-
-export { getLevelMultiplier, getLevel }
 
 export default async function loyaltyRoutes(app: FastifyInstance) {
+  app.post('/spin', { preHandler: authenticate }, async (req, reply) => {
+    const parsed = spinSchema.safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: parsed.error.flatten() })
 
-  async function requireAuth(req: any, reply: any) {
-    try { await req.jwtVerify() } catch {
-      return reply.status(401).send({ success: false, error: 'Unauthorized' })
+    const today = kyivDateString()
+    const lockKey = `spin:${req.user.id}:${today}`
+    const lockOk = await acquireLock(lockKey, 10)
+    if (!lockOk) return reply.status(409).send({ success: false, error: 'Spin already in progress' })
+
+    try {
+      const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+      if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+      if (user.lastSpinDate === today) {
+        return reply.status(400).send({ success: false, error: 'Daily spin already used', nextSpinDate: today })
+      }
+
+      const reward = rollSpin()
+      const updated = await prisma.$transaction(async (tx) => {
+        const u = await tx.user.update({
+          where: { id: req.user.id },
+          data: {
+            lastSpinDate: today,
+            points: reward > 0 ? { increment: reward } : undefined,
+            lastActivity: new Date(),
+          },
+          select: { id: true, points: true, lastSpinDate: true },
+        })
+
+        await tx.pointsTransaction.create({
+          data: {
+            userId: req.user.id,
+            amount: reward,
+            type: 'SPIN',
+            description: reward > 0 ? `Щоденний спін: +${reward}` : 'Щоденний спін: без виграшу',
+            idempotencyKey: `spin-${req.user.id}-${today}`,
+          },
+        })
+
+        return u
+      })
+
+      return reply.send({
+        success: true,
+        reward,
+        message: reward > 0 ? `Вітаємо! +${reward} балів` : 'Спробуй завтра ✨',
+        user: updated,
+      })
+    } finally {
+      await releaseLock(lockKey)
     }
-  }
-
-  app.get('/status', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
-    if (!user) return reply.status(404).send({ success: false, error: 'Not found' })
-
-    const points = user.points
-    const level = getLevel(points)
-    const multiplier = getLevelMultiplier(points)
-    const nextLevel = getNextLevel(points)
-
-    const completedOrders = await prisma.order.count({
-      where: { userId: user.id, status: 'COMPLETED' },
-    })
-    const spinsEarned = Math.floor(completedOrders / 5)
-    const spinsUsed = await prisma.spinResult.count({ where: { userId: user.id } })
-    const spinsAvailable = Math.max(0, spinsEarned - spinsUsed)
-
-    const transactions = await prisma.pointsTransaction.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    })
-
-    const vouchers = await prisma.prizeVoucher.findMany({
-      where: { userId: user.id, isUsed: false, expiresAt: { gt: new Date() } },
-    })
-
-    return reply.send({
-      success: true, points, level, multiplier, nextLevel,
-      spinsAvailable, completedOrders, transactions, vouchers,
-    })
   })
 
-  app.post('/spin', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
-    if (!user) return reply.status(404).send({ success: false, error: 'Not found' })
-
-    const completedOrders = await prisma.order.count({
-      where: { userId: user.id, status: 'COMPLETED' },
+  app.get('/transactions', { preHandler: authenticate }, async (req, reply) => {
+    const transactions = await prisma.pointsTransaction.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     })
-    const spinsEarned = Math.floor(completedOrders / 5)
-    const spinsUsed = await prisma.spinResult.count({ where: { userId: user.id } })
+    return reply.send({ success: true, transactions })
+  })
 
-    if (spinsEarned - spinsUsed <= 0) {
-      return reply.status(400).send({ success: false, error: 'No spins available' })
-    }
+  app.get('/referral', { preHandler: authenticate }, async (req, reply) => {
+    const botUsername = process.env.BOT_USERNAME || 'perkup_bot'
+    const link = `https://t.me/${botUsername}?start=ref_${req.user.id}`
 
-    const prize = spinWheel()
-    const prizeIndex = WHEEL_PRIZES.findIndex(p => p.id === prize.id)
-
-    await prisma.spinResult.create({
-      data: { userId: user.id, prizeId: prize.id, prizeLabel: prize.label },
-    })
-
-    let voucherCode: string | null = null
-
-    if (prize.type === 'points') {
-      const multiplier = getLevelMultiplier(user.points)
-      const bonus = Math.round(prize.value * multiplier)
-      await prisma.user.update({ where: { id: user.id }, data: { points: { increment: bonus } } })
-      await prisma.pointsTransaction.create({
-        data: {
-          userId: user.id, amount: bonus, type: 'BONUS',
-          description: 'Spin: ' + prize.id,
-          idempotencyKey: 'spin-' + user.id + '-' + Date.now(),
-        },
-      })
-      await tgSend(String(user.telegramId), 'Narahovano ' + bonus + ' baliv za spin!')
-
-    } else if (prize.type !== 'nothing') {
-      voucherCode = crypto.randomBytes(3).toString('hex').toUpperCase()
-      const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000)
-      await prisma.prizeVoucher.create({
-        data: {
-          userId: user.id, code: voucherCode,
-          prizeId: prize.id, prizeLabel: prize.label,
-          prizeType: prize.type, prizeValue: prize.value,
-          expiresAt, isUsed: false,
-        },
-      })
-      await tgSend(String(user.telegramId), 'Priz: ' + prize.id + '. Kod: ' + voucherCode + '. Dijsnyj 7 dniv.')
-    }
+    const invited = await prisma.user.count({ where: { referredById: req.user.id } })
 
     return reply.send({
       success: true,
-      prizeIndex,
-      prize,
-      voucherCode,
-      prizes: WHEEL_PRIZES,
+      referral: {
+        link,
+        invited,
+      },
     })
   })
 
-  app.get('/prizes', async (_req: any, reply: any) => {
-    return reply.send({ success: true, prizes: WHEEL_PRIZES })
-  })
+  app.post('/redeem', { preHandler: authenticate }, async (req, reply) => {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+    if (user.points < 100) return reply.status(400).send({ success: false, error: 'Not enough points (need 100)' })
 
-  app.post('/redeem/:code', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
-      return reply.status(403).send({ success: false, error: 'Forbidden' })
-    }
-    const code = (req.params as any).code.toUpperCase()
-    const voucher = await prisma.prizeVoucher.findUnique({ where: { code } })
-    if (!voucher) return reply.status(404).send({ success: false, error: 'Not found' })
-    if (voucher.isUsed) return reply.status(400).send({ success: false, error: 'Already used' })
-    if (voucher.expiresAt < new Date()) return reply.status(400).send({ success: false, error: 'Expired' })
+    const code = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
-    await prisma.prizeVoucher.update({ where: { code }, data: { isUsed: true, usedAt: new Date() } })
+    const redemption = await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: req.user.id }, data: { points: { decrement: 100 } } })
+      await tx.pointsTransaction.create({
+        data: {
+          userId: req.user.id,
+          amount: -100,
+          type: 'REDEEM',
+          description: 'Обмін 100 балів на напій',
+          idempotencyKey: `redeem-${req.user.id}-${Date.now()}`,
+        },
+      })
 
-    const user = await prisma.user.findUnique({ where: { id: voucher.userId } })
-    if (user) await tgSend(String(user.telegramId), 'Priz "' + voucher.prizeLabel + '" aktivovano!')
+      return tx.redemptionCode.create({
+        data: { userId: req.user.id, code, points: 100, expiresAt },
+      })
+    })
 
-    return reply.send({ success: true, prize: voucher.prizeLabel, type: voucher.prizeType })
+    return reply.send({ success: true, redemption })
   })
 }

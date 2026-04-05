@@ -18,23 +18,84 @@ const CATEGORY_ID_MAP: Record<string, string> = {
   '11': 'merch', '12': 'food',
 }
 
-function mapCategory(id: string): string {
-  return CATEGORY_ID_MAP[id] || 'other'
+// Stable mapping by Poster menu_category_id (preferred).
+// Fallback by category name is kept for unknown IDs.
+const CATEGORY_ID_MAP: Record<string, string> = {
+  '1': 'coffee',   // Кава
+  '3': 'cold',     // Холодні напої
+  '6': 'coffee',   // Не кава (авторські)
+  '7': 'sweets',   // Солодощі
+  '8': 'food',     // Їжа
+  '9': 'beans',    // Кава на продаж
+  '10': 'sweets',  // Морозиво
+  '11': 'merch',   // Мерч
+  '12': 'food',    // Дитяче меню
 }
 
-function parsePrice(item: any): number {
-  if (item.price && typeof item.price === 'object') {
-    const vals = Object.values(item.price as Record<string, string>)
-    if (vals.length > 0) return parseFloat(vals[0]) / 100
+const CATEGORY_NAME_FALLBACK: Record<string, string> = {
+  'кава': 'coffee',
+  'coffee': 'coffee',
+  'кофе': 'coffee',
+  'холод': 'cold',
+  'лимонад': 'cold',
+  'їжа': 'food',
+  'food': 'food',
+  'випічка': 'food',
+  'десерт': 'sweets',
+  'морозив': 'sweets',
+  'мерч': 'merch',
+  'зерн': 'beans',
+}
+
+function mapCategory(item: any): string {
+  const categoryId = String(item.menu_category_id || item.category_id || '').trim()
+  if (categoryId && CATEGORY_ID_MAP[categoryId]) {
+    return CATEGORY_ID_MAP[categoryId]
   }
-  return parseFloat(String(item.product_price || '0')) / 100
+
+  const name = String(item.category_name || item.menu_category_name || '').toLowerCase()
+  for (const [key, val] of Object.entries(CATEGORY_NAME_FALLBACK)) {
+    if (name.includes(key)) return val
+  }
+
+  return 'coffee'
 }
 
-function buildImageUrl(photo: any, subdomain: string): string | undefined {
-  if (!photo || photo === '0' || photo === '') return undefined
-  const p = String(photo)
-  if (p.startsWith('http')) return p
-  return 'https://' + subdomain + '.joinposter.com' + p
+function firstDefinedString(...values: any[]): string {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      const str = String(value).trim()
+      if (str) return str
+    }
+  }
+  return ''
+}
+
+// Poster price can be a string/number in cents, or an object per spot.
+function extractPriceUah(item: any): number {
+  const rawCandidates = [item.product_price, item.price, item.menu_price]
+
+  for (const raw of rawCandidates) {
+    if (raw === undefined || raw === null) continue
+
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) ? raw / 100 : 0
+    }
+
+    if (typeof raw === 'string') {
+      const n = parseFloat(raw)
+      if (Number.isFinite(n)) return n / 100
+    }
+
+    if (typeof raw === 'object') {
+      for (const value of Object.values(raw)) {
+        const n = parseFloat(String(value))
+        if (Number.isFinite(n)) return n / 100
+      }
+    }
+  }
+
+  return 0
 }
 
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
@@ -43,40 +104,45 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
 
   const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
   if (!location) throw new Error('Location not found: ' + locationSlug)
-
-  console.log('[Poster] Sync ' + locationSlug + ' via ' + cfg.subdomain + '.joinposter.com')
-
-  const url = 'https://' + cfg.subdomain + '.joinposter.com/api/menu.getProducts?token=' + cfg.token
+  const errors: string[] = []
+  let synced = 0
+  // IMPORTANT: do not pass type=products here.
+  // In Poster some coffee items are stored as tech cards and are filtered out by type=products.
+  const url = 'https://' + loc.subdomain + '.joinposter.com/api/menu.getProducts?token=' + loc.token
   const res = await fetch(url)
   if (!res.ok) throw new Error('Poster API error: ' + res.status)
 
   const data = await res.json() as any
-  if (!data.response) throw new Error('Bad Poster response for ' + locationSlug)
-
-  const products: any[] = Array.isArray(data.response)
-    ? data.response
-    : Object.values(data.response)
-
-  console.log('[Poster] Got ' + products.length + ' products for ' + locationSlug)
-
-  const errors: string[] = []
-  let synced = 0
-
-  for (const item of products) {
+  if (!data.response) throw new Error('Bad Poster response')
+  const products = Array.isArray(data.response) ? data.response : Object.values(data.response as Record<string, unknown>)
+  const syncedPosterIds = new Set<string>()
+  console.log('[Poster] ' + products.length + ' products for ' + locationSlug)
+  for (const item of products as any[]) {
     try {
-      const posterProductId = String(item.product_id)
-      const name = String(item.product_name || '')
-      const price = parsePrice(item)
-      const category = mapCategory(String(item.menu_category_id || '0'))
-      const imageUrl = buildImageUrl(item.photo, cfg.subdomain)
-      const isAvailable = item.out !== 1
-      const description = item.product_production_description
-        ? String(item.product_production_description)
-        : null
-
-      // Find existing product for THIS location with this posterProductId
-      const existing = await prisma.product.findFirst({
-        where: { locationId: location.id, posterProductId },
+      const posterProductId = firstDefinedString(item.product_id, item.productid, item.id)
+      if (!posterProductId) {
+        errors.push('unknown-id: empty product id')
+        continue
+      }
+      syncedPosterIds.add(posterProductId)
+      const price = extractPriceUah(item)
+      const category = mapCategory(item)
+      const name = firstDefinedString(item.product_name, item.name, item.product_title)
+      if (!name) {
+        errors.push(`${posterProductId}: empty product name`)
+        continue
+      }
+      await prisma.product.upsert({
+        where: {
+          locationId_posterProductId: {
+            locationId: location.id,
+            posterProductId,
+          },
+        },
+        // We intentionally do not sync external Poster image links into menu items.
+        // Media must be managed via approved channels (e.g. Telegram file storage/proxy).
+        update: { name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null },
+        create: { locationId: location.id, posterProductId, name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null, allergens: [], tags: [] },
       })
 
       if (existing) {
@@ -113,8 +179,20 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
     console.log('[Poster] Removed ' + removed.count + ' stale products for ' + locationSlug)
   }
 
+  if (errors.length) {
+    console.warn(`[Poster] ${locationSlug} sync warnings: ${errors.length}`)
+  }
+
+  // Keep local menu aligned with Poster: hide products no longer present in Poster response.
+  await prisma.product.updateMany({
+    where: {
+      locationId: location.id,
+      posterProductId: { not: null, notIn: [...syncedPosterIds] },
+    },
+    data: { isAvailable: false },
+  })
+
   await redisCache.del('menu:' + locationSlug)
-  console.log('[Poster] Done ' + locationSlug + ': ' + synced + '/' + products.length + ', errors: ' + errors.length)
   return { synced, errors }
 }
 
