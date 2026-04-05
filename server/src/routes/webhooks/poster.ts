@@ -3,67 +3,64 @@ import crypto from 'crypto'
 import { prisma } from '../../lib/prisma'
 
 export default async function posterWebhookRoutes(app: FastifyInstance) {
-  app.post('/:locationId', async (req, reply) => {
-    const { locationId } = req.params as { locationId: string }
+
+  // POST /webhooks/poster
+  app.post('/', async (req, reply) => {
+    // Verify webhook signature from Poster
+    const signature = req.headers['x-poster-hook-signature'] as string
+    const webhookSecret = process.env.POSTER_APP_SECRET
+
+    if (webhookSecret && signature) {
+      const body = JSON.stringify(req.body)
+      const expected = crypto
+        .createHmac('md5', webhookSecret)
+        .update(body)
+        .digest('hex')
+
+      if (expected !== signature) {
+        app.log.warn('Invalid Poster webhook signature')
+        return reply.status(401).send({ error: 'Invalid signature' })
+      }
+    }
+
     const payload = req.body as any
+    app.log.info({ posterWebhook: payload }, 'Received Poster webhook')
 
-    const locationIdNum = Number(locationId)
-    if (!Number.isFinite(locationIdNum)) {
-      return reply.code(400).send({ success: false, error: 'Invalid location id' })
-    }
+    // Handle order status changes
+    if (payload.object === 'incoming_order' && payload.action === 'changed') {
+      try {
+        const posterOrderId = parseInt(payload.object_id)
+        const posterStatus = payload.data?.status
 
-    const location = await prisma.location.findUnique({ where: { id: locationIdNum } })
-    if (!location || !location.hasPoster) {
-      return reply.code(400).send({ success: false, error: 'Invalid location' })
-    }
-
-    const signature = req.headers['x-poster-hook-signature'] as string | undefined
-    if (signature && location.posterToken) {
-      const rawBody = JSON.stringify(payload)
-      const expected = crypto.createHmac('md5', location.posterToken).update(rawBody).digest('hex')
-      if (signature !== expected) {
-        app.log.warn({ locationId: location.id }, 'Invalid Poster webhook signature')
-        return reply.code(401).send({ success: false, error: 'Invalid signature' })
-      }
-    }
-
-    if (payload.object === 'incoming_order' && payload.action === 'closed') {
-      const posterOrderId = String(payload.data?.incoming_order_id ?? '')
-      if (!posterOrderId) return reply.send({ success: true })
-
-      const order = await prisma.order.findFirst({
-        where: { posterOrderId, locationId: location.id },
-      })
-
-      if (order && order.status !== 'COMPLETED') {
-        await prisma.$transaction(async (tx) => {
-          await tx.order.update({
-            where: { id: order.id },
-            data: { status: 'COMPLETED' },
-          })
-
-          const pointsEarned = Math.floor(Number(order.total) / 10)
-          if (pointsEarned > 0) {
-            await tx.user.update({
-              where: { id: order.userId },
-              data: { points: { increment: pointsEarned } },
-            })
-            await tx.pointsTransaction.upsert({
-              where: { idempotencyKey: `order-completed-points-${order.id}` },
-              update: {},
-              create: {
-                userId: order.userId,
-                amount: pointsEarned,
-                type: 'ORDER',
-                description: `Бали за замовлення #${order.id}`,
-                idempotencyKey: `order-completed-points-${order.id}`,
-              },
-            })
-          }
+        const order = await prisma.order.findFirst({
+          where: { posterOrderId },
         })
+
+        if (order) {
+          // Map Poster status to our status
+          // 1=new, 2=accepted, 3=ready, 4=delivered
+          const statusMap: Record<number, string> = {
+            1: 'PENDING',
+            2: 'ACCEPTED',
+            3: 'READY',
+            4: 'COMPLETED',
+          }
+
+          const newStatus = statusMap[posterStatus]
+          if (newStatus) {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { status: newStatus as any },
+            })
+            app.log.info(`Order ${order.id} status updated to ${newStatus} via Poster webhook`)
+          }
+        }
+      } catch (err) {
+        app.log.error(err, 'Error processing Poster webhook')
       }
     }
 
-    return reply.send({ success: true })
+    // Always return 200 so Poster doesn't retry
+    return reply.status(200).send({ ok: true })
   })
 }
