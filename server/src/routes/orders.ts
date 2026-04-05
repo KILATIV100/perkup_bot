@@ -20,6 +20,20 @@ async function tgSend(chatId: string, text: string) {
   }
 }
 
+function getLevelMultiplier(points: number): number {
+  if (points >= 3000) return 1.3
+  if (points >= 1000) return 1.2
+  if (points >= 300) return 1.1
+  return 1.0
+}
+
+function calcEarnedPoints(total: number, userPoints: number): number {
+  // 1 point per 5 UAH <level multiplier
+  const base = Math.floor(total / 5)
+  const multiplier = getLevelMultiplier(userPoints)
+  return Math.round(base * multiplier)
+}
+
 function locationIsOpen(hours: any[]): boolean {
   const now = new Date(Date.now() + 2 * 3600000)
   const day = now.getUTCDay()
@@ -90,10 +104,12 @@ export default async function orderRoutes(app: FastifyInstance) {
       }
     }
 
+    // Max discount = 20% of total
     let discount = 0
     if (pointsUsed > 0) {
       if (user.points < pointsUsed) return reply.status(400).send({ success: false, error: 'Not enough points' })
-      discount = Math.min(pointsUsed, Math.floor(total * 0.5))
+      const maxDiscount = Math.floor(total * 0.2)
+      discount = Math.min(pointsUsed, maxDiscount)
     }
     const finalTotal = Math.max(0, total - discount)
     const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
@@ -109,9 +125,9 @@ export default async function orderRoutes(app: FastifyInstance) {
     })
 
     if (pointsUsed > 0) {
-      await prisma.user.update({ where: { id: user.id }, data: { points: { decrement: pointsUsed } } })
+      await prisma.user.update({ where: { id: user.id }, data: { points: { decrement: discount } } })
       await prisma.pointsTransaction.create({ data: {
-        userId: user.id, amount: -pointsUsed, type: 'REDEEM',
+        userId: user.id, amount: -discount, type: 'REDEEM',
         description: 'Points for order #' + order.id,
         idempotencyKey: 'redeem-order-' + order.id,
       }})
@@ -120,18 +136,17 @@ export default async function orderRoutes(app: FastifyInstance) {
     await redisCache.del('menu:' + location.slug)
 
     const itemLines = orderItems.map((i: any) => '- ' + i.name + ' x' + i.quantity + ' = ' + (i.price * i.quantity) + ' uah').join('\n')
-    const payStr = paymentMethod === 'cash' ? 'cash' : 'card'
-    const msgParts = [
+    const msg = [
       'New order #' + order.id,
       location.name,
       itemLines,
-      (discount > 0 ? 'Discount: -' + discount + ' uah' : ''),
+      discount > 0 ? 'Discount: -' + discount + ' uah' : '',
       'Total: ' + finalTotal + ' uah',
-      'Payment: ' + payStr,
-      (comment ? 'Note: ' + comment : ''),
+      paymentMethod === 'cash' ? 'Cash' : 'Card',
+      comment ? 'Note: ' + comment : '',
       'QR: ' + qrCode,
-    ].filter(Boolean)
-    await tgSend(OWNER_ID, msgParts.join('\n'))
+    ].filter(Boolean).join('\n')
+    await tgSend(OWNER_ID, msg)
 
     return reply.send({ success: true, orderId: order.id, qrCode, total: finalTotal, status: 'PENDING' })
   })
@@ -185,8 +200,9 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     await prisma.order.update({ where: { id }, data: { status: parsed.data.status } })
 
+    // Accrue points on COMPLETED: 1 point per 5 UAH * level multiplier
     if (parsed.data.status === 'COMPLETED') {
-      const pts = Math.floor(Number(order.total) / 10)
+      const pts = calcEarnedPoints(Number(order.total), order.user.points)
       if (pts > 0) {
         const key = 'order-complete-' + id
         const exists = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: key } })
