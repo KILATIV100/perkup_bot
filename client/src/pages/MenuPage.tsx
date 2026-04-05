@@ -19,6 +19,17 @@ type MenuCategory = {
   products: MenuProduct[]
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  coffee: '☕ Кава',
+  cold: '🧊 Холодні',
+  food: '🥐 Їжа',
+  sweets: '🍰 Солодощі',
+  addons: '➕ Добавки',
+  beans: '🌱 Зерно',
+  merch: '🎁 Мерч',
+  other: '📦 Інше',
+}
+
 export default function MenuPage() {
   const { activeLocation } = useLocationStore()
   const [search, setSearch] = useState('')
@@ -119,7 +130,7 @@ export default function MenuPage() {
 
       {categories.map((section) => (
         <section key={section.category} className="space-y-2">
-          <h2 className="text-lg font-bold text-coffee-700 capitalize">{section.category}</h2>
+          <h2 className="text-lg font-bold text-coffee-700">{CATEGORY_LABELS[section.category] || section.category}</h2>
           {section.products.map((p) => (
             <article key={p.id} className="bg-white rounded-2xl border border-gray-100 p-3 shadow-sm">
               <div className="flex justify-between gap-3">
