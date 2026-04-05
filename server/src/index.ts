@@ -4,7 +4,7 @@ import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 import { prisma } from './lib/prisma'
-import { redis, redisCache } from './lib/redis'
+import { redis } from './lib/redis'
 import authRoutes from './routes/auth'
 import locationRoutes from './routes/locations'
 import menuRoutes from './routes/menu'
@@ -52,7 +52,7 @@ async function bootstrap() {
   await app.listen({ port, host: '0.0.0.0' })
   console.log('PerkUp Server running on port ' + port)
   try { await prisma.$connect(); console.log('PostgreSQL connected') } catch (err) { console.error('PostgreSQL error:', (err as Error).message) }
-  try { await redisCache.ping(); console.log('Redis connected') } catch (err) { console.error('Redis error:', (err as Error).message) }
+  try { await redis.ping(); console.log('Redis connected') } catch (err) { console.error('Redis error:', (err as Error).message) }
   try {
     startPosterSyncWorker()
     await schedulePosterSync()
