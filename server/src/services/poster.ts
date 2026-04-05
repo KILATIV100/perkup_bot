@@ -2,10 +2,36 @@ import axios from 'axios'
 import { prisma } from '../lib/prisma'
 import { redisCache } from '../lib/redis'
 
-const LOCATIONS = [
-  { slug: 'krona', subdomain: process.env.POSTER_KRONA_SUBDOMAIN || 'perkup2', token: process.env.POSTER_KRONA_TOKEN || '' },
-  { slug: 'pryozerny', subdomain: process.env.POSTER_PRYOZERNY_SUBDOMAIN || 'perkup', token: process.env.POSTER_PRYOZERNY_TOKEN || '' },
-]
+const LOCATION_CONFIGS: Record<string, { subdomain: string; token: string }> = {
+  krona: {
+    subdomain: 'perkup2',
+    token: '400311:442859326f65b2aa1974a9ebd303b8a8',
+  },
+  pryozerny: {
+    subdomain: 'perkup',
+    token: '483421:44288031aab04be166b1455d61771e0f',
+  },
+}
+
+const CATEGORY_ID_MAP: Record<string, string> = {
+  '1': 'coffee', '3': 'cold', '5': 'addons', '6': 'coffee',
+  '7': 'sweets', '8': 'food', '9': 'beans', '10': 'sweets',
+  '11': 'merch', '12': 'food',
+}
+
+// Stable mapping by Poster menu_category_id (preferred).
+// Fallback by category name is kept for unknown IDs.
+const CATEGORY_ID_MAP: Record<string, string> = {
+  '1': 'coffee',   // Кава
+  '3': 'cold',     // Холодні напої
+  '6': 'coffee',   // Не кава (авторські)
+  '7': 'sweets',   // Солодощі
+  '8': 'food',     // Їжа
+  '9': 'beans',    // Кава на продаж
+  '10': 'sweets',  // Морозиво
+  '11': 'merch',   // Мерч
+  '12': 'food',    // Дитяче меню
+}
 
 // Stable mapping by Poster menu_category_id (preferred).
 // Fallback by category name is kept for unknown IDs.
@@ -88,8 +114,9 @@ function extractPriceUah(item: any): number {
 }
 
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
-  const loc = LOCATIONS.find(l => l.slug === locationSlug)
-  if (!loc || !loc.token) throw new Error('No config for ' + locationSlug)
+  const cfg = LOCATION_CONFIGS[locationSlug]
+  if (!cfg) throw new Error('No config for slug: ' + locationSlug)
+
   const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
   if (!location) throw new Error('Location not found: ' + locationSlug)
   const errors: string[] = []
@@ -98,7 +125,8 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   // In Poster some coffee items are stored as tech cards and are filtered out by type=products.
   const url = 'https://' + loc.subdomain + '.joinposter.com/api/menu.getProducts?token=' + loc.token
   const res = await fetch(url)
-  if (!res.ok) throw new Error('Poster API ' + res.status)
+  if (!res.ok) throw new Error('Poster API error: ' + res.status)
+
   const data = await res.json() as any
   if (!data.response) throw new Error('Bad Poster response')
   const products = Array.isArray(data.response) ? data.response : Object.values(data.response as Record<string, unknown>)
@@ -131,8 +159,43 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
         update: { name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null },
         create: { locationId: location.id, posterProductId, name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null, allergens: [], tags: [] },
       })
+
+      if (existing) {
+        await prisma.product.update({
+          where: { id: existing.id },
+          data: { name, price, category, imageUrl, isAvailable, description },
+        })
+      } else {
+        await prisma.product.create({
+          data: {
+            locationId: location.id,
+            posterProductId,
+            name, price, category, imageUrl,
+            isAvailable, description,
+            allergens: [], tags: [],
+          },
+        })
+      }
       synced++
-    } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
+    } catch (e: any) {
+      errors.push(String(item.product_id) + ': ' + (e?.message || String(e)))
+    }
+  }
+
+  // Remove products that are no longer in Poster
+  const posterIds = products.map((p: any) => String(p.product_id))
+  const removed = await prisma.product.deleteMany({
+    where: {
+      locationId: location.id,
+      posterProductId: { notIn: posterIds },
+    },
+  })
+  if (removed.count > 0) {
+    console.log('[Poster] Removed ' + removed.count + ' stale products for ' + locationSlug)
+  }
+
+  if (errors.length) {
+    console.warn(`[Poster] ${locationSlug} sync warnings: ${errors.length}`)
   }
 
   if (errors.length) {
@@ -153,8 +216,13 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
 }
 
 export async function syncAllLocations(): Promise<void> {
-  for (const loc of LOCATIONS) {
-    try { await syncPosterMenu(loc.slug) } catch (err: any) { console.error('[Poster] Failed ' + loc.slug, err.message) }
+  for (const slug of Object.keys(LOCATION_CONFIGS)) {
+    try {
+      const result = await syncPosterMenu(slug)
+      console.log('[Poster] ' + slug + ' OK: ' + result.synced + ' products')
+    } catch (e: any) {
+      console.error('[Poster] ' + slug + ' FAILED: ' + (e?.message || String(e)))
+    }
   }
 }
 
