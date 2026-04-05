@@ -6,17 +6,46 @@ const LOCATIONS = [
   { slug: 'pryozerny', subdomain: process.env.POSTER_PRYOZERNY_SUBDOMAIN || 'perkup', token: process.env.POSTER_PRYOZERNY_TOKEN || '' },
 ]
 
-const CATEGORY_MAP: Record<string, string> = {
-  'кава': 'coffee', 'coffee': 'coffee', 'кофе': 'coffee',
-  'холодні': 'cold', 'cold': 'cold', 'смузі': 'cold', 'лимонад': 'cold',
-  'їжа': 'food', 'food': 'food', 'випічка': 'food', 'снеки': 'food',
+// Stable mapping by Poster menu_category_id (preferred).
+// Fallback by category name is kept for unknown IDs.
+const CATEGORY_ID_MAP: Record<string, string> = {
+  '1': 'coffee',   // Кава
+  '3': 'cold',     // Холодні напої
+  '6': 'coffee',   // Не кава (авторські)
+  '7': 'sweets',   // Солодощі
+  '8': 'food',     // Їжа
+  '9': 'beans',    // Кава на продаж
+  '10': 'sweets',  // Морозиво
+  '11': 'merch',   // Мерч
+  '12': 'food',    // Дитяче меню
 }
 
-function mapCategory(name: string): string {
-  const lower = name.toLowerCase()
-  for (const [key, val] of Object.entries(CATEGORY_MAP)) {
-    if (lower.includes(key)) return val
+const CATEGORY_NAME_FALLBACK: Record<string, string> = {
+  'кава': 'coffee',
+  'coffee': 'coffee',
+  'кофе': 'coffee',
+  'холод': 'cold',
+  'лимонад': 'cold',
+  'їжа': 'food',
+  'food': 'food',
+  'випічка': 'food',
+  'десерт': 'sweets',
+  'морозив': 'sweets',
+  'мерч': 'merch',
+  'зерн': 'beans',
+}
+
+function mapCategory(item: any): string {
+  const categoryId = String(item.menu_category_id || item.category_id || '').trim()
+  if (categoryId && CATEGORY_ID_MAP[categoryId]) {
+    return CATEGORY_ID_MAP[categoryId]
   }
+
+  const name = String(item.category_name || item.menu_category_name || '').toLowerCase()
+  for (const [key, val] of Object.entries(CATEGORY_NAME_FALLBACK)) {
+    if (name.includes(key)) return val
+  }
+
   return 'coffee'
 }
 
@@ -27,7 +56,9 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   if (!location) throw new Error('Location not found: ' + locationSlug)
   const errors: string[] = []
   let synced = 0
-  const url = 'https://' + loc.subdomain + '.joinposter.com/api/menu.getProducts?token=' + loc.token + '&type=products'
+  // IMPORTANT: do not pass type=products here.
+  // In Poster some coffee items are stored as tech cards and are filtered out by type=products.
+  const url = 'https://' + loc.subdomain + '.joinposter.com/api/menu.getProducts?token=' + loc.token
   const res = await fetch(url)
   if (!res.ok) throw new Error('Poster API ' + res.status)
   const data = await res.json() as any
@@ -40,6 +71,7 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
       const posterProductId = String(item.product_id)
       syncedPosterIds.add(posterProductId)
       const price = parseFloat(item.product_price || '0') / 100
+      const category = mapCategory(item)
       await prisma.product.upsert({
         where: {
           locationId_posterProductId: {
@@ -49,8 +81,8 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
         },
         // We intentionally do not sync external Poster image links into menu items.
         // Media must be managed via approved channels (e.g. Telegram file storage/proxy).
-        update: { name: item.product_name, price, category: mapCategory(item.category_name || ''), isAvailable: item.out !== 1, description: item.product_production_description || null },
-        create: { locationId: location.id, posterProductId, name: item.product_name, price, category: mapCategory(item.category_name || ''), isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
+        update: { name: item.product_name, price, category, isAvailable: item.out !== 1, description: item.product_production_description || null },
+        create: { locationId: location.id, posterProductId, name: item.product_name, price, category, isAvailable: item.out !== 1, description: item.product_production_description || null, allergens: [], tags: [] },
       })
       synced++
     } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
