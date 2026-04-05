@@ -1,5 +1,27 @@
-import { prisma } from '../lib/prisma'
-import { redis } from '../lib/redis'
+import { PrismaClient } from '@prisma/client'
+import Redis from 'ioredis'
+
+const prisma = new PrismaClient()
+const redisCache = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+  maxRetriesPerRequest: 3,
+  lazyConnect: true,
+})
+
+interface PosterItem {
+  product_id: string | number
+  product_name: string
+  product_price?: string | number
+  price?: Record<string, string>
+  menu_category_id?: string | number
+  photo?: string
+  out?: number
+  product_production_description?: string
+}
+
+interface Location {
+  id: number
+  slug: string
+}
 
 const LOCATIONS = [
   { slug: 'krona', subdomain: process.env.POSTER_KRONA_SUBDOMAIN || 'perkup2', token: process.env.POSTER_KRONA_TOKEN || '' },
@@ -87,10 +109,12 @@ function extractPriceUah(item: any): number {
 }
 
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
-  const loc = LOCATIONS.find(l => l.slug === locationSlug)
-  if (!loc || !loc.token) throw new Error('No config for ' + locationSlug)
-  const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
+  const locConfig = LOCATIONS.find(function(l) { return l.slug === locationSlug })
+  if (!locConfig || !locConfig.token) throw new Error('No config for ' + locationSlug)
+
+  const location: Location | null = await prisma.location.findUnique({ where: { slug: locationSlug } })
   if (!location) throw new Error('Location not found: ' + locationSlug)
+
   const errors: string[] = []
   let synced = 0
   // IMPORTANT: do not pass type=products here.
@@ -98,12 +122,15 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   const url = 'https://' + loc.subdomain + '.joinposter.com/api/menu.getProducts?token=' + loc.token
   const res = await fetch(url)
   if (!res.ok) throw new Error('Poster API ' + res.status)
-  const data = await res.json() as any
+
+  const data = await res.json() as { response: unknown }
   if (!data.response) throw new Error('Bad Poster response')
   const products = Array.isArray(data.response) ? data.response : Object.values(data.response as Record<string, unknown>)
   const syncedPosterIds = new Set<string>()
   console.log('[Poster] ' + products.length + ' products for ' + locationSlug)
-  for (const item of products as any[]) {
+
+  for (let i = 0; i < products.length; i++) {
+    const item = products[i]
     try {
       const posterProductId = firstDefinedString(item.product_id, item.productid, item.id)
       if (!posterProductId) {
@@ -131,7 +158,9 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
         create: { locationId: location.id, posterProductId, name, price, category, isAvailable: String(item.out) !== '1', description: item.product_production_description || item.description || null, allergens: [], tags: [] },
       })
       synced++
-    } catch (err: any) { errors.push(item.product_id + ': ' + err.message) }
+    } catch (e) {
+      errors.push(String(item.product_id) + ': ' + String(e))
+    }
   }
 
   if (errors.length) {
@@ -152,7 +181,12 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
 }
 
 export async function syncAllLocations(): Promise<void> {
-  for (const loc of LOCATIONS) {
-    try { await syncPosterMenu(loc.slug) } catch (err: any) { console.error('[Poster] Failed ' + loc.slug, err.message) }
+  for (let i = 0; i < LOCATIONS.length; i++) {
+    const loc = LOCATIONS[i]
+    try {
+      await syncPosterMenu(loc.slug)
+    } catch (e) {
+      console.error('[Poster] Failed ' + loc.slug, String(e))
+    }
   }
 }
