@@ -9,6 +9,52 @@ const loginSchema = z.object({
 
 export default async function authRoutes(app: FastifyInstance) {
 
+  // DEV helper login for local/staging smoke tests outside Telegram WebApp.
+  // Enabled only when explicitly allowed.
+  app.post('/dev-login', async (req, reply) => {
+    if (process.env.ALLOW_DEV_LOGIN !== 'true') {
+      return reply.status(403).send({ success: false, error: 'Dev login disabled' })
+    }
+
+    const body = z.object({
+      telegramId: z.coerce.number().int().positive().optional(),
+      firstName: z.string().min(1).max(100).optional(),
+    }).safeParse(req.body)
+
+    if (!body.success) {
+      return reply.status(400).send({ success: false, error: 'Invalid request' })
+    }
+
+    const user = await prisma.user.upsert({
+      where: { telegramId: BigInt(body.data.telegramId || 999000001) },
+      update: { lastActivity: new Date() },
+      create: {
+        telegramId: BigInt(body.data.telegramId || 999000001),
+        firstName: body.data.firstName || 'Dev User',
+        language: 'uk',
+        onboardingDone: true,
+      },
+    })
+
+    const token = app.jwt.sign({ id: user.id, role: user.role })
+
+    return reply.send({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+        role: user.role,
+        points: user.points,
+        level: user.level,
+        language: user.language,
+        onboardingDone: user.onboardingDone,
+      },
+    })
+  })
+
   // POST /api/auth/telegram
   app.post('/telegram', async (req, reply) => {
     const body = loginSchema.safeParse(req.body)
