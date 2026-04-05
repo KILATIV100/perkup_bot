@@ -4,11 +4,13 @@ import { useLocationStore } from '../stores/location'
 import { useCartStore } from '../stores/cart'
 import { locationsApi } from '../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 
 export default function Header() {
   const [showPicker, setShowPicker] = useState(false)
   const { locations, activeLocation, setLocations, setActiveLocation } = useLocationStore()
   const cartCount = useCartStore(s => s.getTotalItems())
+  const navigate = useNavigate()
 
   useQuery({
     queryKey: ['locations'],
@@ -63,7 +65,7 @@ export default function Header() {
 
         {/* Notification / Cart */}
         <div className="relative">
-          <button className="w-10 h-10 flex items-center justify-center">
+          <button className="w-10 h-10 flex items-center justify-center" onClick={() => navigate('/cart')}>
             🛒
           </button>
           {cartCount > 0 && (
