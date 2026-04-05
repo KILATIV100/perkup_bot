@@ -9,12 +9,16 @@ import authRoutes from './routes/auth'
 import locationRoutes from './routes/locations'
 import menuRoutes from './routes/menu'
 import orderRoutes from './routes/orders'
+import shiftsRoutes from './routes/shifts'
 import loyaltyRoutes from './routes/loyalty'
 import adminRoutes from './routes/admin'
 import mediaRoutes from './routes/media'
+import reviewRoutes from './routes/reviews'
+import notificationsRoutes from './routes/notifications'
 import healthRoutes from './routes/health'
 import posterWebhookRoutes from './routes/webhooks/poster'
 import { schedulePosterSync, startPosterSyncWorker } from './workers/posterSync'
+import { scheduleReminderJobs, startReminderWorker } from './workers/reminders'
 import { syncAllLocations } from './services/poster'
 
 const app = Fastify({ logger: { level: 'info' }, ignoreTrailingSlash: true, ignoreDuplicateSlashes: true })
@@ -31,9 +35,12 @@ async function bootstrap() {
   await app.register(locationRoutes,      { prefix: '/api/locations' })
   await app.register(menuRoutes,          { prefix: '/api/menu' })
   await app.register(orderRoutes,         { prefix: '/api/orders' })
+  await app.register(shiftsRoutes,        { prefix: '/api/shifts' })
   await app.register(loyaltyRoutes,       { prefix: '/api/loyalty' })
   await app.register(adminRoutes,         { prefix: '/api/admin' })
   await app.register(mediaRoutes,         { prefix: '/api/media' })
+  await app.register(reviewRoutes,        { prefix: '/api/reviews' })
+  await app.register(notificationsRoutes, { prefix: '/api/notifications' })
   await app.register(posterWebhookRoutes, { prefix: '/webhooks/poster' })
   app.setErrorHandler((error, _req, reply) => {
     if (error.statusCode === 429) return reply.status(429).send({ success: false, error: 'Too many requests' })
@@ -56,6 +63,12 @@ async function bootstrap() {
       console.log('[Poster] Initial sync done')
     }, 8000)
   } catch (err) { console.error('Poster sync error:', (err as Error).message) }
+
+  try {
+    startReminderWorker()
+    await scheduleReminderJobs()
+    console.log('Reminder worker started')
+  } catch (err) { console.error('Reminder worker error:', (err as Error).message) }
 }
 
 process.on('SIGTERM', async () => { await app.close(); await prisma.$disconnect(); process.exit(0) })

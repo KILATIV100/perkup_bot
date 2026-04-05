@@ -25,3 +25,7 @@ export const acquireLock = async (key: string, ttlSeconds: number): Promise<bool
 }
 
 export const releaseLock = (key: string) => redis.del(key)
+
+
+// Backward-compatible alias used by server bootstrap health checks
+export const redisCache = redis
