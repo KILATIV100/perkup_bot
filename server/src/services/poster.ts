@@ -77,6 +77,43 @@ function extractPriceUah(item: any): number {
   return 0;
 }
 
+function firstDefinedString(...values: any[]): string {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      const str = String(value).trim()
+      if (str) return str
+    }
+  }
+  return ''
+}
+
+// Poster price can be a string/number in cents, or an object per spot.
+function extractPriceUah(item: any): number {
+  const rawCandidates = [item.product_price, item.price, item.menu_price]
+
+  for (const raw of rawCandidates) {
+    if (raw === undefined || raw === null) continue
+
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) ? raw / 100 : 0
+    }
+
+    if (typeof raw === 'string') {
+      const n = parseFloat(raw)
+      if (Number.isFinite(n)) return n / 100
+    }
+
+    if (typeof raw === 'object') {
+      for (const value of Object.values(raw)) {
+        const n = parseFloat(String(value))
+        if (Number.isFinite(n)) return n / 100
+      }
+    }
+  }
+
+  return 0
+}
+
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
   const loc = LOCATIONS.find((l) => l.slug === locationSlug);
   if (!loc || !loc.token) throw new Error(`No config for ${locationSlug}`);

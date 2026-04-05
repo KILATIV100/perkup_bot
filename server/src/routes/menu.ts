@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
-import { redis } from '../lib/redis'
+import { redisCache } from '../lib/redis'
 
 const MENU_CACHE_TTL = 1800 // 30 minutes
 
@@ -29,7 +29,7 @@ export default async function menuRoutes(app: FastifyInstance) {
     let products: any[]
     let bundles: any[]
 
-    const cached = await redis.get(cacheKey)
+    const cached = await redisCache.get(cacheKey)
     if (cached) {
       const data = JSON.parse(cached)
       products = data.products
@@ -50,7 +50,7 @@ export default async function menuRoutes(app: FastifyInstance) {
       })
 
       // Cache it
-      await redis.set(cacheKey, JSON.stringify({ products, bundles }), 'EX', MENU_CACHE_TTL)
+      await redisCache.set(cacheKey, JSON.stringify({ products, bundles }), 'EX', MENU_CACHE_TTL)
     }
 
     // Apply filters
