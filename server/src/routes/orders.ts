@@ -3,7 +3,6 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { authenticate, requireBarista } from '../plugins/auth'
-import { createIncomingOrderInPoster } from '../services/poster'
 
 const createOrderSchema = z.object({
   locationId: z.number().int().positive(),
@@ -65,7 +64,7 @@ async function notifyOwnerAboutNewOrder(payload: {
 }
 
 export default async function orderRoutes(app: FastifyInstance) {
-  app.post('/', { preValidation: authenticate }, async (req, reply) => {
+  app.post('/', { preHandler: authenticate }, async (req, reply) => {
     const parsed = createOrderSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ success: false, error: parsed.error.flatten() })
 
@@ -140,28 +139,7 @@ export default async function orderRoutes(app: FastifyInstance) {
           })),
         },
       },
-      include: { items: true, location: { select: { name: true, hasPoster: true } } },
-    })
-
-    if (location.hasPoster) {
-      try {
-        await createIncomingOrderInPoster(order.id)
-        return reply.status(201).send({
-          success: true,
-          orderId: order.id,
-          qrCode: order.qrCode,
-          total: Number(order.total),
-          status: 'SENT_TO_POS',
-        })
-      } catch (err) {
-        req.log.error({ err, orderId: order.id }, 'Poster sync failed')
-        return reply.status(500).send({ success: false, error: 'Failed to send to POS' })
-      }
-    }
-
-    const acceptedOrder = await prisma.order.update({
-      where: { id: order.id },
-      data: { status: 'ACCEPTED' },
+      include: { items: true, location: { select: { name: true } } },
     })
 
     await notifyOwnerAboutNewOrder({
@@ -174,10 +152,10 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     return reply.status(201).send({
       success: true,
-      orderId: acceptedOrder.id,
-      qrCode: acceptedOrder.qrCode,
-      total: Number(acceptedOrder.total),
-      status: acceptedOrder.status,
+      orderId: order.id,
+      qrCode: order.qrCode,
+      total: Number(order.total),
+      status: order.status,
     })
   })
 
