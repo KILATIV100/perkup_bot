@@ -389,45 +389,17 @@ model GameSession {
 // ─── RADIO ────────────────────────────────────────────────────────
 
 model RadioTrack {
-  id             Int      @id @default(autoincrement())
-  title          String
-  artist         String
-  telegramFileId String
-  duration       Int
-  likes          Int      @default(0)
-  sortOrder      Int      @default(0)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-}
-
-// ─── BADGE ────────────────────────────────────────────────────────
-
-model UserBadge {
   id        Int      @id @default(autoincrement())
-  userId    Int
-  badge     String
-  awardedAt DateTime @default(now())
+  fileId    String
+  title     String
+  artist    String   @default("PerkUp Radio")
+  duration  Int      @default(180)
+  genre     String   @default("lofi")
+  url       String
+  position  Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 
-  @@unique([userId, badge])
-  @@index([userId])
-}
-
-// ─── DAILY CHALLENGE ──────────────────────────────────────────────
-
-model DailyChallenge {
-  id          Int      @id @default(autoincrement())
-  date        String   @unique  // "YYYY-MM-DD"
-  type        String
-  description String
-  reward      Int
-  createdAt   DateTime @default(now())
-}
-
-model UserChallenge {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  challengeId Int
-  completedAt DateTime @default(now())
-
-  @@unique([userId, challengeId])
+  @@index([genre])
+  @@index([position])
 }

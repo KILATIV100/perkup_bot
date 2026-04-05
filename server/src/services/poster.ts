@@ -114,6 +114,21 @@ export async function syncAllLocations(): Promise<void> {
       console.error(`[Poster] Failed ${loc.slug}:`, err.message);
     }
   }
+
+  const posterOrderId = response.data?.response?.incoming_order_id;
+  if (!posterOrderId) {
+    throw new Error('Poster response does not contain incoming_order_id');
+  }
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      posterOrderId: String(posterOrderId),
+      status: 'SENT_TO_POS',
+    },
+  });
+
+  return response.data.response;
 }
 
 export const createPosterClient = (token: string) => {
