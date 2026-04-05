@@ -6,6 +6,11 @@ import { useAuthStore } from './stores/auth'
 import MenuPage from './pages/MenuPage'
 import ProfilePage from './pages/ProfilePage'
 import OnboardingPage from './pages/OnboardingPage'
+import BonusesPage from './pages/BonusesPage'
+import FunPage from './pages/FunPage'
+import CartPage from './pages/CartPage'
+import CheckoutPage from './pages/CheckoutPage'
+import OrderStatusPage from './pages/OrderStatusPage'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
@@ -42,6 +47,11 @@ export default function App() {
           <Route path="/" element={<Navigate to="/menu" replace />} />
           <Route path="/menu" element={<MenuPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/bonuses" element={<BonusesPage />} />
+          <Route path="/fun" element={<FunPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/orders/:id" element={<OrderStatusPage />} />
           <Route path="*" element={<Navigate to="/menu" replace />} />
         </Routes>
       </main>

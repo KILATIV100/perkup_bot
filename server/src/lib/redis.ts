@@ -1,27 +1,31 @@
-import Redis from 'ioredis'
+import Redis from 'ioredis';
 
+// Single Redis instance for the whole server process.
 export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: 3,
   retryStrategy: (times) => Math.min(times * 100, 3000),
   lazyConnect: true,
-})
+});
 
 redis.on('error', (err) => {
-  console.error('Redis error:', err.message)
-})
+  console.error('[Redis] Error:', err.message);
+});
 
 redis.on('connect', () => {
-  console.log('Redis connected')
-})
+  console.log('[Redis] Connected successfully');
+});
 
 // Helper: set with expiry in seconds
-export const setEx = (key: string, seconds: number, value: string) =>
-  redis.set(key, value, 'EX', seconds)
+export const setEx = async (key: string, seconds: number, value: string) => {
+  return redis.set(key, value, 'EX', seconds);
+};
 
 // Helper: atomic lock (for race condition protection)
 export const acquireLock = async (key: string, ttlSeconds: number): Promise<boolean> => {
-  const result = await redis.set(key, '1', 'EX', ttlSeconds, 'NX')
-  return result === 'OK'
-}
+  const result = await redis.set(key, '1', 'EX', ttlSeconds, 'NX');
+  return result === 'OK';
+};
 
-export const releaseLock = (key: string) => redis.del(key)
+export const releaseLock = async (key: string) => {
+  return redis.del(key);
+};
