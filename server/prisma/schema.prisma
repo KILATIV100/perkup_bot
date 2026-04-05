@@ -19,6 +19,7 @@ enum Role {
 enum OrderStatus {
   PAYMENT_PENDING
   PENDING
+  SENT_TO_POS
   ACCEPTED
   PREPARING
   READY
@@ -105,9 +106,11 @@ model Location {
   lng                 Float
   radius              Int      @default(100)
   allowOrders         Boolean  @default(false)
+  hasPoster           Boolean  @default(false)
   posterSubdomain     String?
   posterAccount       String?
   posterToken         String?
+  posterSpotId        Int?
   googlePlaceId       String?
   googleMapsUrl       String?
   busyMode            Boolean  @default(false)
@@ -146,7 +149,7 @@ model WorkingHours {
 model Product {
   id              Int      @id @default(autoincrement())
   locationId      Int
-  posterProductId String?  @unique
+  posterProductId String?
   name            String
   description     String?
   ingredients     String?
@@ -171,6 +174,7 @@ model Product {
 
   @@index([locationId, category, isAvailable])
   @@index([locationId, ordersCount])
+  @@unique([locationId, posterProductId])
 }
 
 // ─── BUNDLE ───────────────────────────────────────────────────────
@@ -213,7 +217,7 @@ model Order {
   locationId     Int
   shiftId        Int?
   status         OrderStatus @default(PAYMENT_PENDING)
-  posterOrderId  Int?
+  posterOrderId  String?
   total          Decimal     @db.Decimal(10, 2)
   discount       Decimal     @default(0) @db.Decimal(10, 2)
   promoCode      String?
