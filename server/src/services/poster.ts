@@ -44,7 +44,7 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
   if (!location) throw new Error('Location not found: ' + locationSlug)
 
-  console.log('[Poster] Sync start: ' + locationSlug + ' subdomain=' + cfg.subdomain)
+  console.log('[Poster] Sync ' + locationSlug + ' via ' + cfg.subdomain + '.joinposter.com')
 
   const url = 'https://' + cfg.subdomain + '.joinposter.com/api/menu.getProducts?token=' + cfg.token
   const res = await fetch(url)
@@ -62,11 +62,6 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
   const errors: string[] = []
   let synced = 0
 
-  // Delete all old products for this location and re-create from Poster
-  // This guarantees no cross-location contamination
-  await prisma.product.deleteMany({ where: { locationId: location.id } })
-  console.log('[Poster] Cleared old products for ' + locationSlug)
-
   for (const item of products) {
     try {
       const posterProductId = String(item.product_id)
@@ -79,28 +74,47 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
         ? String(item.product_production_description)
         : null
 
-      await prisma.product.create({
-        data: {
-          locationId: location.id,
-          posterProductId,
-          name,
-          price,
-          category,
-          imageUrl,
-          isAvailable,
-          description,
-          allergens: [],
-          tags: [],
-        },
+      // Find existing product for THIS location with this posterProductId
+      const existing = await prisma.product.findFirst({
+        where: { locationId: location.id, posterProductId },
       })
+
+      if (existing) {
+        await prisma.product.update({
+          where: { id: existing.id },
+          data: { name, price, category, imageUrl, isAvailable, description },
+        })
+      } else {
+        await prisma.product.create({
+          data: {
+            locationId: location.id,
+            posterProductId,
+            name, price, category, imageUrl,
+            isAvailable, description,
+            allergens: [], tags: [],
+          },
+        })
+      }
       synced++
     } catch (e: any) {
       errors.push(String(item.product_id) + ': ' + (e?.message || String(e)))
     }
   }
 
+  // Remove products that are no longer in Poster
+  const posterIds = products.map((p: any) => String(p.product_id))
+  const removed = await prisma.product.deleteMany({
+    where: {
+      locationId: location.id,
+      posterProductId: { notIn: posterIds },
+    },
+  })
+  if (removed.count > 0) {
+    console.log('[Poster] Removed ' + removed.count + ' stale products for ' + locationSlug)
+  }
+
   await redisCache.del('menu:' + locationSlug)
-  console.log('[Poster] Done ' + locationSlug + ': ' + synced + '/' + products.length)
+  console.log('[Poster] Done ' + locationSlug + ': ' + synced + '/' + products.length + ', errors: ' + errors.length)
   return { synced, errors }
 }
 
@@ -108,7 +122,7 @@ export async function syncAllLocations(): Promise<void> {
   for (const slug of Object.keys(LOCATION_CONFIGS)) {
     try {
       const result = await syncPosterMenu(slug)
-      console.log('[Poster] ' + slug + ' OK: ' + result.synced)
+      console.log('[Poster] ' + slug + ' OK: ' + result.synced + ' products')
     } catch (e: any) {
       console.error('[Poster] ' + slug + ' FAILED: ' + (e?.message || String(e)))
     }
