@@ -19,26 +19,61 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
   })
 
+  app.post('/create-tables', async (_req: any, reply: any) => {
+    const results: string[] = []
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "SpinResult" (
+          "id"         SERIAL PRIMARY KEY,
+          "userId"     INTEGER NOT NULL,
+          "prizeId"    TEXT NOT NULL,
+          "prizeLabel" TEXT NOT NULL,
+          "createdAt"  TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `)
+      results.push('SpinResult table: OK')
+
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "SpinResult_userId_idx" ON "SpinResult"("userId")
+      `)
+      results.push('SpinResult index: OK')
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "PrizeVoucher" (
+          "id"         SERIAL PRIMARY KEY,
+          "userId"     INTEGER NOT NULL,
+          "code"       TEXT NOT NULL UNIQUE,
+          "prizeId"    TEXT NOT NULL,
+          "prizeLabel" TEXT NOT NULL,
+          "prizeType"  TEXT NOT NULL,
+          "prizeValue" INTEGER NOT NULL DEFAULT 0,
+          "isUsed"     BOOLEAN NOT NULL DEFAULT FALSE,
+          "usedAt"     TIMESTAMP,
+          "expiresAt"  TIMESTAMP NOT NULL,
+          "createdAt"  TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `)
+      results.push('PrizeVoucher table: OK')
+
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "PrizeVoucher_userId_idx" ON "PrizeVoucher"("userId")
+      `)
+      results.push('PrizeVoucher index: OK')
+
+      return reply.send({ success: true, results })
+    } catch (e: any) {
+      return reply.status(500).send({ success: false, error: e.message, results })
+    }
+  })
+
   app.post('/fix-db', async (_req: any, reply: any) => {
     const results: string[] = []
     try {
-      // Find all unique constraints on Product table
-      const constraints = await prisma.$queryRaw`
-        SELECT constraint_name
-        FROM information_schema.table_constraints
-        WHERE table_name = 'Product'
-          AND constraint_type = 'UNIQUE'
-      ` as any[]
-      results.push('Found constraints: ' + JSON.stringify(constraints.map((c: any) => c.constraint_name)))
-
-      // Drop any constraint that has posterProductId but NOT locationId
       const indexes = await prisma.$queryRaw`
-        SELECT indexname FROM pg_indexes
-        WHERE tablename = 'Product'
+        SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'Product'
       ` as any[]
       results.push('Indexes: ' + JSON.stringify(indexes.map((i: any) => i.indexname)))
 
-      // Try dropping by all known possible names
       const namesToTry = [
         'Product_posterProductId_key',
         'product_posterproductid_key',
@@ -53,7 +88,6 @@ export default async function adminRoutes(app: FastifyInstance) {
         }
       }
 
-      // Also try via index
       try {
         await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "Product_posterProductId_key"')
         results.push('Index DROP attempted')
@@ -61,7 +95,6 @@ export default async function adminRoutes(app: FastifyInstance) {
         results.push('Index DROP failed: ' + e.message)
       }
 
-      // Now clear pryozerny and re-sync
       const loc = await prisma.location.findUnique({ where: { slug: 'pryozerny' } })
       if (loc) {
         const deleted = await prisma.product.deleteMany({ where: { locationId: loc.id } })
@@ -79,9 +112,23 @@ export default async function adminRoutes(app: FastifyInstance) {
     const pryozerny = await prisma.location.findUnique({ where: { slug: 'pryozerny' } })
     const kronaCount = krona ? await prisma.product.count({ where: { locationId: krona.id } }) : 0
     const pryCount = pryozerny ? await prisma.product.count({ where: { locationId: pryozerny.id } }) : 0
+
+    let spinCount = 0
+    let voucherCount = 0
+    try {
+      const spinRes = await prisma.$queryRaw`SELECT COUNT(*) as cnt FROM "SpinResult"` as any[]
+      spinCount = Number(spinRes[0]?.cnt || 0)
+      const voucherRes = await prisma.$queryRaw`SELECT COUNT(*) as cnt FROM "PrizeVoucher"` as any[]
+      voucherCount = Number(voucherRes[0]?.cnt || 0)
+    } catch (_e) {}
+
     const indexes = await prisma.$queryRaw`
-      SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'Product'
+      SELECT indexname FROM pg_indexes WHERE tablename = 'Product'
     ` as any[]
-    return reply.send({ kronaCount, pryCount, indexes: indexes.map((i: any) => ({ name: i.indexname, def: i.indexdef })) })
+
+    return reply.send({
+      kronaCount, pryCount, spinCount, voucherCount,
+      indexes: indexes.map((i: any) => i.indexname)
+    })
   })
 }
