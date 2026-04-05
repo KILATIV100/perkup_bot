@@ -33,6 +33,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function MenuPage() {
   const { activeLocation } = useLocationStore()
   const [search, setSearch] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('card')
   const [checkoutMsg, setCheckoutMsg] = useState('')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
@@ -51,6 +52,11 @@ export default function MenuPage() {
   })
 
   const categories = useMemo<MenuCategory[]>(() => menuQuery.data?.categories || [], [menuQuery.data])
+  const categoryTabs = useMemo<string[]>(() => categories.map((c) => c.category), [categories])
+  const visibleCategories = useMemo<MenuCategory[]>(() => {
+    if (selectedCategory === 'all') return categories
+    return categories.filter((c) => c.category === selectedCategory)
+  }, [categories, selectedCategory])
 
   const checkout = async () => {
     if (!activeLocation) return
@@ -128,7 +134,25 @@ export default function MenuPage() {
         className="w-full border border-gray-200 rounded-xl px-3 py-2"
       />
 
-      {categories.map((section) => (
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        <button
+          onClick={() => setSelectedCategory('all')}
+          className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap border ${selectedCategory === 'all' ? 'bg-coffee-600 text-white border-coffee-600' : 'bg-white border-gray-200 text-gray-700'}`}
+        >
+          Усі
+        </button>
+        {categoryTabs.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap border ${selectedCategory === cat ? 'bg-coffee-600 text-white border-coffee-600' : 'bg-white border-gray-200 text-gray-700'}`}
+          >
+            {CATEGORY_LABELS[cat] || cat}
+          </button>
+        ))}
+      </div>
+
+      {visibleCategories.map((section) => (
         <section key={section.category} className="space-y-2">
           <h2 className="text-lg font-bold text-coffee-700">{CATEGORY_LABELS[section.category] || section.category}</h2>
           {section.products.map((p) => (
