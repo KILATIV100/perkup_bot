@@ -191,7 +191,7 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     await prisma.order.update({ where: { id }, data: { status: parsed.data.status } })
 
-    if (parsed.data.status === 'COMPLETED {
+    if (parsed.data.status === 'COMPLETED') {
       const pts = calcEarnedPoints(Number(order.total), order.user.points)
       if (pts > 0) {
         const key = 'order-complete-' + id
