@@ -16,21 +16,10 @@ const LOCATIONS = [
 ];
 
 const CATEGORY_MAP: Record<string, string> = {
-  'кава': 'coffee',
-  'coffee': 'coffee',
-  'кофе': 'coffee',
-  'холодні': 'cold',
-  'cold': 'cold',
-  'смузі': 'cold',
-  'лимонад': 'cold',
-  'їжа': 'food',
-  'food': 'food',
-  'випічка': 'food',
-  'снеки': 'food',
-  'десерт': 'food',
-  'мерч': 'merch',
-  'зерно': 'beans',
-  'beans': 'beans',
+  'кава': 'coffee', 'coffee': 'coffee', 'кофе': 'coffee',
+  'холодні': 'cold', 'cold': 'cold', 'смузі': 'cold', 'лимонад': 'cold',
+  'їжа': 'food', 'food': 'food', 'випічка': 'food', 'снеки': 'food', 'десерт': 'food',
+  'мерч': 'merch', 'зерно': 'beans', 'beans': 'beans',
 };
 
 function mapCategory(name: string): string {
@@ -38,160 +27,70 @@ function mapCategory(name: string): string {
   for (const [key, val] of Object.entries(CATEGORY_MAP)) {
     if (lower.includes(key)) return val;
   }
-  return 'coffee';
-}
-
-function firstDefinedString(...values: any[]): string {
-  for (const value of values) {
-    if (value !== undefined && value !== null) {
-      const str = String(value).trim();
-      if (str) return str;
-    }
-  }
-  return '';
-}
-
-function extractPriceUah(item: any): number {
-  const rawCandidates = [item.product_price, item.price, item.menu_price];
-
-  for (const raw of rawCandidates) {
-    if (raw === undefined || raw === null) continue;
-
-    if (typeof raw === 'number') {
-      return Number.isFinite(raw) ? raw / 100 : 0;
-    }
-
-    if (typeof raw === 'string') {
-      const n = parseFloat(raw);
-      if (Number.isFinite(n)) return n / 100;
-    }
-
-    if (typeof raw === 'object') {
-      for (const value of Object.values(raw)) {
-        const n = parseFloat(String(value));
-        if (Number.isFinite(n)) return n / 100;
-      }
-    }
-  }
-
-  return 0;
-}
-
-function firstDefinedString(...values: any[]): string {
-  for (const value of values) {
-    if (value !== undefined && value !== null) {
-      const str = String(value).trim()
-      if (str) return str
-    }
-  }
-  return ''
-}
-
-// Poster price can be a string/number in cents, or an object per spot.
-function extractPriceUah(item: any): number {
-  const rawCandidates = [item.product_price, item.price, item.menu_price]
-
-  for (const raw of rawCandidates) {
-    if (raw === undefined || raw === null) continue
-
-    if (typeof raw === 'number') {
-      return Number.isFinite(raw) ? raw / 100 : 0
-    }
-
-    if (typeof raw === 'string') {
-      const n = parseFloat(raw)
-      if (Number.isFinite(n)) return n / 100
-    }
-
-    if (typeof raw === 'object') {
-      for (const value of Object.values(raw)) {
-        const n = parseFloat(String(value))
-        if (Number.isFinite(n)) return n / 100
-      }
-    }
-  }
-
-  return 0
+  return 'coffee'; // default
 }
 
 export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
-  const loc = LOCATIONS.find((l) => l.slug === locationSlug);
+  const loc = LOCATIONS.find(l => l.slug === locationSlug);
   if (!loc || !loc.token) throw new Error(`No config for ${locationSlug}`);
 
   const location = await prisma.location.findUnique({ where: { slug: locationSlug } });
   if (!location) throw new Error(`Location not found: ${locationSlug}`);
 
+  console.log(`[Poster] Syncing ${locationSlug}...`);
+
   const errors: string[] = [];
   let synced = 0;
 
-  // Keep endpoint without `type=products` to avoid filtering out tech-card products in Poster.
-  const url = `https://${loc.subdomain}.joinposter.com/api/menu.getProducts?token=${loc.token}`;
+  const url = `https://${loc.subdomain}.joinposter.com/api/menu.getProducts?token=${loc.token}&type=products`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Poster API ${res.status}: ${res.statusText}`);
 
-  const data = (await res.json()) as any;
+  const data = await res.json() as any;
   if (!data.response) throw new Error(`Bad Poster response: ${JSON.stringify(data).slice(0, 200)}`);
 
   const products = Array.isArray(data.response)
     ? data.response
     : Object.values(data.response as Record<string, unknown>);
 
-  const syncedPosterIds = new Set<string>();
+  console.log(`[Poster] ${products.length} products received for ${locationSlug}`);
 
   for (const item of products as any[]) {
     try {
-      const posterProductId = firstDefinedString(item.product_id, item.productid, item.id);
-      if (!posterProductId) {
-        errors.push('unknown-id: empty product id');
-        continue;
-      }
+      const price = parseFloat(item.product_price || '0') / 100;
 
-      const name = firstDefinedString(item.product_name, item.name, item.product_title);
-      if (!name) {
-        errors.push(`${posterProductId}: empty product name`);
-        continue;
-      }
-
-      const price = extractPriceUah(item);
-      const category = mapCategory(String(item.category_name || item.menu_category_name || ''));
-
-      let imageUrl: string | null = null;
+      let imageUrl: string | undefined;
       if (item.photo && item.photo !== '0' && item.photo !== '') {
         imageUrl = String(item.photo).startsWith('http')
-          ? String(item.photo)
-          : `https://${loc.subdomain}.joinposter.com${String(item.photo)}`;
+          ? item.photo
+          : `https://${loc.subdomain}.joinposter.com${item.photo}`;
       }
 
-      // Explicit vars to avoid shorthand scope issues during upsert.
-      const isAvailable = String(item.out) !== '1';
-      const description = item.product_production_description || item.description || null;
-
-      syncedPosterIds.add(posterProductId);
-
       await prisma.product.upsert({
+        // Schema has unique ([locationId, posterProductId]), so upsert key must use composite unique input.
         where: {
           locationId_posterProductId: {
             locationId: location.id,
-            posterProductId,
+            posterProductId: String(item.product_id),
           },
         },
         update: {
-          name,
+          name: item.product_name,
           price,
-          category,
+          category: mapCategory(item.category_name || ''),
           imageUrl,
-          isAvailable,
-          description,
+          isAvailable: item.out !== 1,
+          description: item.product_production_description || null,
         },
         create: {
           locationId: location.id,
-          posterProductId,
-          name,
+          posterProductId: String(item.product_id),
+          name: item.product_name,
           price,
-          category,
+          category: mapCategory(item.category_name || ''),
           imageUrl,
-          isAvailable,
-          description,
+          isAvailable: item.out !== 1,
+          description: item.product_production_description || null,
           allergens: [],
           tags: [],
         },
@@ -202,15 +101,8 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
     }
   }
 
-  await prisma.product.updateMany({
-    where: {
-      locationId: location.id,
-      posterProductId: { not: null, notIn: [...syncedPosterIds] },
-    },
-    data: { isAvailable: false },
-  });
-
   await redis.del(`menu:${locationSlug}`);
+  console.log(`[Poster] Synced ${synced}/${products.length} for ${locationSlug}`);
   return { synced, errors };
 }
 
@@ -222,6 +114,21 @@ export async function syncAllLocations(): Promise<void> {
       console.error(`[Poster] Failed ${loc.slug}:`, err.message);
     }
   }
+
+  const posterOrderId = response.data?.response?.incoming_order_id;
+  if (!posterOrderId) {
+    throw new Error('Poster response does not contain incoming_order_id');
+  }
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      posterOrderId: String(posterOrderId),
+      status: 'SENT_TO_POS',
+    },
+  });
+
+  return response.data.response;
 }
 
 export const createPosterClient = (token: string) => {
@@ -264,6 +171,7 @@ export async function createIncomingOrderInPoster(orderId: number) {
   };
 
   const response = await posterApi.post('/incomingOrders.createIncomingOrder', payload);
+
   if (response.data?.error) {
     throw new Error(`Poster Error: ${response.data.error}`);
   }
