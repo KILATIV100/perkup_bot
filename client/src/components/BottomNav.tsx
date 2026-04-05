@@ -1,17 +1,15 @@
 import { NavLink } from 'react-router-dom'
-import { useCartStore } from '../stores/cart'
 import clsx from 'clsx'
 
 const tabs = [
-  { path: '/menu',    emoji: '☕', label: 'Меню'     },
-  { path: '/fun',     emoji: '🎮', label: 'Fun Zone' },
-  { path: '/bonuses', emoji: '🎡', label: 'Бонуси'   },
-  { path: '/profile', emoji: '👤', label: 'Я'        },
+  { path: '/menu',    emoji: '☕', label: 'Меню' },
+  { path: '/cart',    emoji: '🛒', label: 'Кошик' },
+  { path: '/fun',     emoji: '🎮', label: 'Fun' },
+  { path: '/bonuses', emoji: '🎡', label: 'Бонуси' },
+  { path: '/profile', emoji: '👤', label: 'Я' },
 ]
 
 export default function BottomNav() {
-  const cartCount = useCartStore(s => s.getTotalItems())
-
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-lg"
          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
@@ -28,10 +26,7 @@ export default function BottomNav() {
             {({ isActive }) => (
               <>
                 <span className="text-2xl leading-none">{tab.emoji}</span>
-                <span className={clsx(
-                  'text-[10px] font-medium',
-                  isActive ? 'text-coffee-600' : 'text-gray-400'
-                )}>
+                <span className={clsx('text-[10px] font-medium', isActive ? 'text-coffee-600' : 'text-gray-400')}>
                   {tab.label}
                 </span>
                 {isActive && (
