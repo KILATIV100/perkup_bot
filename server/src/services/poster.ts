@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { prisma } from '../lib/prisma'
 import { redisCache } from '../lib/redis'
 
@@ -16,6 +17,20 @@ const CATEGORY_ID_MAP: Record<string, string> = {
   '1': 'coffee', '3': 'cold', '5': 'addons', '6': 'coffee',
   '7': 'sweets', '8': 'food', '9': 'beans', '10': 'sweets',
   '11': 'merch', '12': 'food',
+}
+
+// Stable mapping by Poster menu_category_id (preferred).
+// Fallback by category name is kept for unknown IDs.
+const CATEGORY_ID_MAP: Record<string, string> = {
+  '1': 'coffee',   // Кава
+  '3': 'cold',     // Холодні напої
+  '6': 'coffee',   // Не кава (авторські)
+  '7': 'sweets',   // Солодощі
+  '8': 'food',     // Їжа
+  '9': 'beans',    // Кава на продаж
+  '10': 'sweets',  // Морозиво
+  '11': 'merch',   // Мерч
+  '12': 'food',    // Дитяче меню
 }
 
 // Stable mapping by Poster menu_category_id (preferred).
@@ -183,6 +198,10 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
     console.warn(`[Poster] ${locationSlug} sync warnings: ${errors.length}`)
   }
 
+  if (errors.length) {
+    console.warn(`[Poster] ${locationSlug} sync warnings: ${errors.length}`)
+  }
+
   // Keep local menu aligned with Poster: hide products no longer present in Poster response.
   await prisma.product.updateMany({
     where: {
@@ -204,5 +223,70 @@ export async function syncAllLocations(): Promise<void> {
     } catch (e: any) {
       console.error('[Poster] ' + slug + ' FAILED: ' + (e?.message || String(e)))
     }
+  }
+}
+
+export const createPosterClient = (token: string) => {
+  return axios.create({
+    baseURL: 'https://joinposter.com/api',
+    params: { token },
+  })
+}
+
+export async function createIncomingOrderInPoster(orderId: number) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true, user: true, location: true },
+  })
+
+  if (!order) throw new Error('Order not found')
+  if (!order.location.hasPoster || !order.location.posterToken || !order.location.posterSpotId) {
+    throw new Error('Location is not configured for Poster POS')
+  }
+
+  const posterApi = createPosterClient(order.location.posterToken)
+  const products = order.items
+    .filter((item) => !!item.productId)
+    .map((item) => ({
+      product_id: item.productId,
+      count: item.quantity,
+      price: Number(item.price),
+    }))
+
+  const payload = {
+    spot_id: order.location.posterSpotId,
+    phone: order.user.username || '',
+    products,
+    payment: {
+      type: 0,
+      sum: 0,
+      currency: 'UAH',
+    },
+    comment: `TG Замовлення #${String(order.id).slice(-4)}\nГість: ${order.user.firstName}`,
+  }
+
+  try {
+    const response = await posterApi.post('/incomingOrders.createIncomingOrder', payload)
+    if (response.data?.error) {
+      throw new Error(`Poster Error: ${response.data.error}`)
+    }
+
+    const posterOrderId = response.data?.response?.incoming_order_id
+    if (!posterOrderId) {
+      throw new Error('Poster response does not contain incoming_order_id')
+    }
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        posterOrderId: String(posterOrderId),
+        status: 'SENT_TO_POS',
+      },
+    })
+
+    return response.data.response
+  } catch (error) {
+    console.error(`Error pushing order ${orderId} to Poster:`, error)
+    throw error
   }
 }
