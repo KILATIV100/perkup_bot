@@ -1,236 +1,244 @@
-import { randomUUID } from 'crypto'
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import crypto from 'crypto'
 import { prisma } from '../lib/prisma'
-import { authenticate, requireBarista } from '../plugins/auth'
+import { redisCache } from '../lib/redis'
 
-const createOrderSchema = z.object({
-  locationId: z.number().int().positive(),
-  paymentMethod: z.enum(['cash', 'card']).default('cash'),
-  comment: z.string().max(500).optional(),
-  items: z.array(z.object({
-    productId: z.number().int().positive().optional(),
-    bundleId: z.number().int().positive().optional(),
-    quantity: z.number().int().min(1).max(20).default(1),
-    modifiers: z.record(z.string(), z.string()).optional(),
-  }).refine(v => !!v.productId || !!v.bundleId, 'productId or bundleId required')).min(1),
-})
+const OWNER_TELEGRAM_ID = process.env.OWNER_TELEGRAM_ID || '7363233852'
+const BOT_TOKEN = process.env.BOT_TOKEN || ''
 
-const statusSchema = z.object({
-  status: z.enum(['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED', 'AUTO_EXPIRED', 'UNASSIGNED']),
-  estimatedReady: z.string().datetime().optional(),
-})
-
-function isLocationOpen(workingHours: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean }>): boolean {
-  const now = new Date()
-  const kyiv = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }))
-  const day = kyiv.getDay()
-  const hh = String(kyiv.getHours()).padStart(2, '0')
-  const mm = String(kyiv.getMinutes()).padStart(2, '0')
-  const time = `${hh}:${mm}`
-
-  const today = workingHours.find((h) => h.dayOfWeek === day)
-  if (!today || today.isClosed) return false
-  return time >= today.openTime && time < today.closeTime
+async function notifyOwner(text: string) {
+  if (!BOT_TOKEN) return
+  try {
+    await fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: OWNER_TELEGRAM_ID, text, parse_mode: 'Markdown' }),
+    })
+  } catch (e) {
+    console.error('Notify owner error:', e)
+  }
 }
 
-async function notifyOwnerAboutNewOrder(payload: {
-  orderId: number
-  locationName: string
-  items: Array<{ name: string; quantity: number; price: number }>
-  total: number
-  paymentMethod: string
-}) {
-  const token = process.env.BOT_TOKEN
-  const ownerTelegramId = process.env.OWNER_TELEGRAM_ID
-  if (!token || !ownerTelegramId) return
+async function notifyUser(telegramId: string, text: string) {
+  if (!BOT_TOKEN) return
+  try {
+    await fetch('https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: telegramId, text, parse_mode: 'Markdown' }),
+    })
+  } catch (e) {
+    console.error('Notify user error:', e)
+  }
+}
 
-  const lines = payload.items.map((i) => `• ${i.name} × ${i.quantity} — ${Math.round(i.price * i.quantity)} ₴`).join('\n')
-  const text =
-    `🔔 Нове замовлення #${payload.orderId}\n` +
-    `📍 ${payload.locationName}\n` +
-    `${lines}\n` +
-    `💰 Разом: ${Math.round(payload.total)} ₴\n` +
-    `💳 Оплата: ${payload.paymentMethod === 'card' ? 'картка' : 'готівка'}`
-
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: Number(ownerTelegramId),
-      text,
-    }),
-  })
+function isLocationOpen(workingHours: any[]): boolean {
+  const now = new Date()
+  const kyivNow = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+  const day = kyivNow.getUTCDay()
+  const timeStr = kyivNow.getUTCHours().toString().padStart(2, '0') + ':' + kyivNow.getUTCMinutes().toString().padStart(2, '0')
+  const todayHours = workingHours.find((h: any) => h.dayOfWeek === day)
+  if (!todayHours || todayHours.isClosed) return false
+  return timeStr >= todayHours.openTime && timeStr < todayHours.closeTime
 }
 
 export default async function orderRoutes(app: FastifyInstance) {
-  app.post('/', { preHandler: authenticate }, async (req, reply) => {
-    const parsed = createOrderSchema.safeParse(req.body)
-    if (!parsed.success) return reply.status(400).send({ success: false, error: parsed.error.flatten() })
 
-    const { locationId, items, paymentMethod, comment } = parsed.data
+  // Auth middleware helper
+  async function auth(req: any, reply: any) {
+    try { await req.jwtVerify() } catch { return reply.status(401).send({ success: false, error: 'Unauthorized' }) }
+  }
 
-    const location = await prisma.location.findUnique({ where: { id: locationId }, include: { workingHours: true } })
-    if (!location || !location.isActive) return reply.status(404).send({ success: false, error: 'Location not found' })
-    if (!location.allowOrders) return reply.status(400).send({ success: false, error: 'Location does not accept orders' })
-    if (!isLocationOpen(location.workingHours)) return reply.status(400).send({ success: false, error: 'Location is closed now' })
+  // POST /api/orders — create order
+  app.post('/', { preHandler: auth }, async (req: any, reply) => {
+    const body = z.object({
+      locationId: z.number(),
+      items: z.array(z.object({
+        productId: z.number().optional(),
+        bundleId: z.number().optional(),
+        quantity: z.number().min(1).max(20),
+        modifiers: z.record(z.string()).optional(),
+      })).min(1),
+      paymentMethod: z.enum(['cash', 'card']).default('cash'),
+      comment: z.string().max(300).optional(),
+      pointsUsed: z.number().min(0).default(0),
+    }).safeParse(req.body)
 
-    const productIds = [...new Set(items.map(i => i.productId).filter(Boolean))] as number[]
-    const bundleIds = [...new Set(items.map(i => i.bundleId).filter(Boolean))] as number[]
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid request', details: body.error.flatten() })
 
-    const [products, bundles] = await Promise.all([
-      productIds.length
-        ? prisma.product.findMany({ where: { id: { in: productIds }, locationId, isAvailable: true } })
-        : Promise.resolve([]),
-      bundleIds.length
-        ? prisma.bundle.findMany({ where: { id: { in: bundleIds }, locationId, isAvailable: true } })
-        : Promise.resolve([]),
-    ])
+    const { locationId, items, paymentMethod, comment, pointsUsed } = body.data
 
-    const productMap = new Map(products.map(p => [p.id, p]))
-    const bundleMap = new Map(bundles.map(b => [b.id, b]))
+    // 1. Check location
+    const location = await prisma.location.findUnique({
+      where: { id: locationId, isActive: true },
+      include: { workingHours: true },
+    })
+    if (!location) return reply.status(404).send({ success: false, error: 'Локацію не знайдено' })
+    if (!location.allowOrders) return reply.status(400).send({ success: false, error: 'Ця локація не приймає замовлення' })
+    if (!isLocationOpen(location.workingHours)) return reply.status(400).send({ success: false, error: 'Кав'ярня зараз зачинена' })
 
+    // 2. Get user
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    if (!user) return reply.status(404).send({ success: false, error: 'Користувача не знайдено' })
+
+    // 3. Validate items & calculate total
     let total = 0
-    const preparedItems: Array<{
-      productId?: number
-      bundleId?: number
-      name: string
-      price: number
-      quantity: number
-      modifiers?: Record<string, string>
-    }> = []
+    const orderItems: any[] = []
 
     for (const item of items) {
-      const quantity = item.quantity || 1
       if (item.productId) {
-        const product = productMap.get(item.productId)
-        if (!product) return reply.status(400).send({ success: false, error: `Product ${item.productId} unavailable` })
+        const product = await prisma.product.findUnique({ where: { id: item.productId } })
+        if (!product || !product.isAvailable || product.locationId !== locationId) {
+          return reply.status(400).send({ success: false, error: 'Товар недоступний: ' + (product?.name || item.productId) })
+        }
         const price = Number(product.price)
-        total += price * quantity
-        preparedItems.push({ productId: product.id, name: product.name, price, quantity, modifiers: item.modifiers })
+        total += price * item.quantity
+        orderItems.push({ productId: product.id, name: product.name, price, quantity: item.quantity, modifiers: item.modifiers || null })
       } else if (item.bundleId) {
-        const bundle = bundleMap.get(item.bundleId)
-        if (!bundle) return reply.status(400).send({ success: false, error: `Bundle ${item.bundleId} unavailable` })
+        const bundle = await prisma.bundle.findUnique({ where: { id: item.bundleId } })
+        if (!bundle || !bundle.isAvailable || bundle.locationId !== locationId) {
+          return reply.status(400).send({ success: false, error: 'Набір недоступний' })
+        }
         const price = Number(bundle.price)
-        total += price * quantity
-        preparedItems.push({ bundleId: bundle.id, name: bundle.name, price, quantity, modifiers: item.modifiers })
+        total += price * item.quantity
+        orderItems.push({ bundleId: bundle.id, name: bundle.name, price, quantity: item.quantity, modifiers: null })
       }
     }
 
-    const qrCode = `ORD-${randomUUID()}`
+    // 4. Points discount (100 points = 1 order item free, max 50% discount)
+    let discount = 0
+    if (pointsUsed > 0) {
+      if (user.points < pointsUsed) return reply.status(400).send({ success: false, error: 'Недостатньо балів' })
+      discount = Math.min(pointsUsed, Math.floor(total * 0.5))
+    }
+    const finalTotal = Math.max(0, total - discount)
 
+    // 5. Generate QR code
+    const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
+
+    // 6. Create order in DB
     const order = await prisma.order.create({
       data: {
-        userId: req.user.id,
+        userId: user.id,
         locationId,
         status: 'PENDING',
-        total,
+        total: finalTotal,
+        discount,
         paymentMethod,
-        comment,
+        comment: comment || null,
+        pointsUsed,
         qrCode,
-        items: {
-          create: preparedItems.map(i => ({
-            productId: i.productId,
-            bundleId: i.bundleId,
-            name: i.name,
-            price: i.price,
-            quantity: i.quantity,
-            modifiers: i.modifiers,
-          })),
-        },
+        items: { create: orderItems },
       },
-      include: { items: true, location: { select: { name: true } } },
+      include: { items: true },
     })
 
-    await notifyOwnerAboutNewOrder({
-      orderId: order.id,
-      locationName: order.location.name,
-      items: order.items.map((i) => ({ name: i.name, quantity: i.quantity, price: Number(i.price) })),
-      total: Number(order.total),
-      paymentMethod: order.paymentMethod,
-    })
+    // 7. Deduct points if used
+    if (pointsUsed > 0) {
+      await prisma.user.update({ where: { id: user.id }, data: { points: { decrement: pointsUsed } } })
+      await prisma.pointsTransaction.create({
+        data: {
+          userId: user.id, amount: -pointsUsed, type: 'REDEEM',
+          description: 'Списання балів за замовлення #' + order.id,
+          idempotencyKey: 'redeem-order-' + order.id,
+        },
+      })
+    }
 
-    return reply.status(201).send({
-      success: true,
-      orderId: order.id,
-      qrCode: order.qrCode,
-      total: Number(order.total),
-      status: order.status,
-    })
+    // 8. Clear menu cache
+    await redisCache.del('menu:' + location.slug)
+
+    // 9. Notify owner
+    const itemsText = orderItems.map(i => '• ' + i.name + ' × ' + i.quantity + ' — ' + (i.price * i.quantity) + ' ₴').join('\n')
+    await notifyOwner(
+      '🔔 *Нове замовлення #' + order.id + '*\n' +
+      '📍 ' + location.name + '\n\n' +
+      itemsText + '\n\n' +
+      (discount > 0 ? '🎁 Знижка балами: -' + discount + ' ₴\n' : '') +
+      '💰 *Разом: ' + finalTotal + ' ₴*\n' +
+      '💳 Оплата: ' + (paymentMethod === 'cash' ? 'готівка' : 'картка') + '\n' +
+      (comment ? '💬 ' + comment + '\n' : '') +
+      '🔑 QR: ' + qrCode
+    )
+
+    return reply.send({ success: true, orderId: order.id, qrCode, total: finalTotal, status: 'PENDING' })
   })
 
-  app.get('/', { preHandler: authenticate }, async (req, reply) => {
+  // GET /api/orders — my orders
+  app.get('/', { preHandler: auth }, async (req: any, reply) => {
     const orders = await prisma.order.findMany({
       where: { userId: req.user.id },
-      include: { items: true, location: { select: { id: true, name: true, slug: true } } },
+      include: { items: true, location: { select: { name: true, slug: true } } },
       orderBy: { createdAt: 'desc' },
-      take: 30,
+      take: 20,
     })
     return reply.send({ success: true, orders })
   })
 
-  app.get('/:id', { preHandler: authenticate }, async (req, reply) => {
-    const id = Number((req.params as { id: string }).id)
-    const order = await prisma.order.findUnique({ where: { id }, include: { items: true, location: true } })
-    if (!order) return reply.status(404).send({ success: false, error: 'Order not found' })
-
-    const canView = order.userId === req.user.id || ['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)
-    if (!canView) return reply.status(403).send({ success: false, error: 'Forbidden' })
-
+  // GET /api/orders/:id — order status
+  app.get('/:id', { preHandler: auth }, async (req: any, reply) => {
+    const id = parseInt((req.params as any).id)
+    const order = await prisma.order.findFirst({
+      where: { id, userId: req.user.id },
+      include: { items: true, location: { select: { name: true, slug: true } } },
+    })
+    if (!order) return reply.status(404).send({ success: false, error: 'Замовлення не знайдено' })
     return reply.send({ success: true, order })
   })
 
-  app.delete('/:id', { preHandler: authenticate }, async (req, reply) => {
-    const id = Number((req.params as { id: string }).id)
-    const order = await prisma.order.findUnique({ where: { id } })
-    if (!order || order.userId !== req.user.id) return reply.status(404).send({ success: false, error: 'Order not found' })
-
-    if (!['PENDING', 'UNASSIGNED'].includes(order.status)) {
-      return reply.status(400).send({ success: false, error: 'Cannot cancel in current status' })
+  // DELETE /api/orders/:id — cancel
+  app.delete('/:id', { preHandler: auth }, async (req: any, reply) => {
+    const id = parseInt((req.params as any).id)
+    const order = await prisma.order.findFirst({ where: { id, userId: req.user.id } })
+    if (!order) return reply.status(404).send({ success: false, error: 'Замовлення не знайдено' })
+    if (!['PENDING', 'PAYMENT_PENDING'].includes(order.status)) {
+      return reply.status(400).send({ success: false, error: 'Замовлення вже не можна скасувати' })
     }
-
-    const cancelled = await prisma.order.update({ where: { id }, data: { status: 'CANCELLED' } })
-    return reply.send({ success: true, order: cancelled })
+    await prisma.order.update({ where: { id }, data: { status: 'CANCELLED' } })
+    return reply.send({ success: true, message: 'Замовлення скасовано' })
   })
 
-  app.patch('/:id/status', { preHandler: await requireBarista }, async (req, reply) => {
-    const id = Number((req.params as { id: string }).id)
-    const parsed = statusSchema.safeParse(req.body)
-    if (!parsed.success) return reply.status(400).send({ success: false, error: parsed.error.flatten() })
+  // PATCH /api/orders/:id/status — update status (barista/admin)
+  app.patch('/:id/status', { preHandler: auth }, async (req: any, reply) => {
+    if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
+      return reply.status(403).send({ success: false, error: 'Forbidden' })
+    }
+    const id = parseInt((req.params as any).id)
+    const body = z.object({ status: z.enum(['ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED']) }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid status' })
 
-    const order = await prisma.order.findUnique({ where: { id } })
-    if (!order) return reply.status(404).send({ success: false, error: 'Order not found' })
+    const order = await prisma.order.findUnique({ where: { id }, include: { user: true } })
+    if (!order) return reply.status(404).send({ success: false, error: 'Не знайдено' })
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const o = await tx.order.update({
-        where: { id },
-        data: {
-          status: parsed.data.status,
-          estimatedReady: parsed.data.estimatedReady ? new Date(parsed.data.estimatedReady) : undefined,
-        },
-      })
+    await prisma.order.update({ where: { id }, data: { status: body.data.status } })
 
-      if (parsed.data.status === 'COMPLETED') {
-        const points = Math.floor(Number(o.total) / 10)
-        if (points > 0) {
-          await tx.user.update({ where: { id: o.userId }, data: { points: { increment: points } } })
-          await tx.pointsTransaction.upsert({
-            where: { idempotencyKey: `order-completed-points-${o.id}` },
-            update: {},
-            create: {
-              userId: o.userId,
-              amount: points,
-              type: 'ORDER',
-              description: `Бали за замовлення #${o.id}`,
-              idempotencyKey: `order-completed-points-${o.id}`,
-            },
+    // Accrue points on COMPLETED (1 point per 10 UAH)
+    if (body.data.status === 'COMPLETED') {
+      const points = Math.floor(Number(order.total) / 10)
+      if (points > 0) {
+        const key = 'order-complete-' + id
+        const exists = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: key } })
+        if (!exists) {
+          await prisma.pointsTransaction.create({
+            data: { userId: order.userId, amount: points, type: 'ORDER', description: 'Бали за замовлення #' + id, idempotencyKey: key },
           })
+          await prisma.user.update({ where: { id: order.userId }, data: { points: { increment: points }, monthlyOrders: { increment: 1 } } })
+          await notifyUser(String(order.user.telegramId), '⭐ Нараховано *' + points + ' балів* за замовлення #' + id + '!')
         }
       }
+    }
 
-      return o
-    })
+    // Notify user about status change
+    const statusMessages: Record<string, string> = {
+      ACCEPTED: '✅ Замовлення #' + id + ' прийнято! Готуємо твою каву ☕',
+      READY: '☕ Замовлення #' + id + ' готове! Забирай 🎉',
+      CANCELLED: '❌ Замовлення #' + id + ' скасовано.',
+    }
+    if (statusMessages[body.data.status]) {
+      await notifyUser(String(order.user.telegramId), statusMessages[body.data.status])
+    }
 
-    return reply.send({ success: true, order: updated })
+    return reply.send({ success: true, status: body.data.status })
   })
 }
