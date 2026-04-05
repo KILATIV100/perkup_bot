@@ -50,25 +50,21 @@ export const useAuthStore = create<AuthState>()(
           window.__hideSplash?.()
         } catch (err) {
           console.error('Auth error:', err)
-          set({ isLoading: false })
-          // In dev mode, create mock user
+          // In dev mode, fallback to backend dev-login to keep API flows working.
           if (import.meta.env.DEV) {
-            set({
-              isAuthenticated: true,
-              isLoading: false,
-              user: {
-                id: 1,
-                telegramId: '123456789',
-                firstName: 'Dev',
-                role: 'USER',
-                points: 150,
-                level: 'SILVER',
-                language: 'uk',
-                onboardingDone: true,
-              },
-            })
-            window.__hideSplash?.()
+            try {
+              const res = await authApi.devLogin()
+              const { token, user } = res.data
+              localStorage.setItem('perkup_token', token)
+              set({ token, user, isAuthenticated: true, isLoading: false })
+              window.__hideSplash?.()
+              return
+            } catch (devErr) {
+              console.error('Dev login error:', devErr)
+            }
           }
+
+          set({ isLoading: false })
         }
       },
 
