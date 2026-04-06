@@ -178,18 +178,20 @@ export default async function adminRoutes(app: FastifyInstance) {
       voucherCount = Number(v[0]?.cnt || 0)
     } catch (_e) {}
     return reply.send({ success: true, kronaCount, pryCount, spinCount, voucherCount })
-  })
+  }))
 
   app.post('/fix-locations', async (_req: any, reply: any) => {
-    const r: string[] = []
+    const results: string[] = []
     try {
-      await prisma.$executeRawUnsafe('UPDATE "Location" SET lat = 50.51723, lng = 30.77948, address = 'Chornovola 8V' WHERE slug = 'krona'')
-      r.push('krona OK')
-      await prisma.$executeRawUnsafe('UPDATE "Location" SET lat = 50.50131, lng = 30.75401, address = 'Fialkovska 27A' WHERE slug = 'pryozerny'')
-      r.push('pryozerny OK')
-      await prisma.$executeRawUnsafe('UPDATE "Location" SET lat = 50.51482, lng = 30.78220, address = 'Kyivska 239' WHERE slug = 'mark-mall'')
-      r.push('mark-mall OK')
-      return reply.send({ success: true, results: r })
-    } catch (e: any) { return reply.status(500).send({ success: false, error: e.message }) }
+      await prisma.location.update({ where: { slug: 'krona' }, data: { lat: 50.51723, lng: 30.77948, address: 'Chornovola 8V, Brovary' } })
+      results.push('krona OK')
+      await prisma.location.update({ where: { slug: 'pryozerny' }, data: { lat: 50.50131, lng: 30.75401, address: 'Fialkovska 27A, Brovary' } })
+      results.push('pryozerny OK')
+      await prisma.location.update({ where: { slug: 'mark-mall' }, data: { lat: 50.51482, lng: 30.78220, address: 'Kyivska 239, Brovary' } })
+      results.push('mark-mall OK')
+      return reply.send({ success: true, results })
+    } catch (e: any) {
+      return reply.status(500).send({ success: false, error: e.message })
+    }
   })
 }
