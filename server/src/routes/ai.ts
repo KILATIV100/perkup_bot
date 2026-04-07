@@ -66,9 +66,22 @@ export default async function aiRoutes(app: FastifyInstance) {
     }
   }
 
-  // GET /api/ai/weather-menu
-  app.get('/weather-menu', async (_req, reply) => {
-    const cacheKey = 'ai:weather-menu:' + todayKey()
+  // Helper: get menu items for a location
+  async function getLocationMenuNames(locationSlug?: string): Promise<string[]> {
+    if (!locationSlug || typeof locationSlug !== 'string') return []
+    const products = await prisma.product.findMany({
+      where: { location: { slug: locationSlug }, isAvailable: true },
+      select: { name: true },
+      orderBy: [{ ordersCount: 'desc' }],
+      take: 40,
+    })
+    return products.map(p => p.name)
+  }
+
+  // GET /api/ai/weather-menu?locationSlug=xxx
+  app.get('/weather-menu', async (req, reply) => {
+    const { locationSlug } = req.query as { locationSlug?: string }
+    const cacheKey = 'ai:weather-menu:' + todayKey() + ':' + (locationSlug || 'default')
     const cached = await redisCache.get(cacheKey)
     if (cached) return reply.send({ success: true, ...JSON.parse(cached) })
 
@@ -85,15 +98,24 @@ export default async function aiRoutes(app: FastifyInstance) {
       console.error('Weather fetch error:', err)
     }
 
-    const weatherText = `${temp}\u00B0C, ${description}`
+    const menuItems = await getLocationMenuNames(locationSlug)
+    const menuStr = menuItems.length > 0
+      ? 'Available drinks from our menu: ' + menuItems.join(', ')
+      : 'Available drinks: espresso, cappuccino, latte, flat white, americano, cold brew, hot chocolate, matcha latte'
+
+    const weatherText = `${temp}°C, ${description}`
     const prompt = `You are a friendly barista at PerkUp coffee shop in Brovary, Ukraine.
 Current weather: ${weatherText}.
-Recommend ONE coffee or drink from: espresso, cappuccino, latte, flat white, americano, cold brew, hot chocolate, matcha latte.
-Write 2-3 sentences in English. Be warm and weather-aware. No lists, no bullet points.`
+${menuStr}.
+Recommend ONE specific drink from the list above that best suits the current weather. Explain in 2-3 sentences why it's perfect for this weather. ONLY recommend drinks from the list.
+Write in Ukrainian. Be warm and weather-aware. No lists, no bullet points.`
 
-    const recommendation = await callClaude(prompt, 200)
+    const recommendation = await callClaude(prompt, 250)
+    const matched = menuItems.find(name =>
+      recommendation.toLowerCase().includes(name.toLowerCase())
+    )
 
-    const payload = { temp, description, recommendation }
+    const payload = { temp, description, recommendation, matchedDrink: matched || null }
     await redisCache.set(cacheKey, JSON.stringify(payload), 'EX', CACHE_1H)
     return reply.send({ success: true, ...payload })
   })
@@ -142,31 +164,90 @@ Write 1-2 sentences in English. Make it engaging and educational. No lists, no b
       return reply.status(400).send({ success: false, error: 'mood required' })
     }
 
-    let menuItems: string[] = []
-    if (locationSlug && typeof locationSlug === 'string') {
-      const products = await prisma.product.findMany({
-        where: { location: { slug: locationSlug }, isAvailable: true },
-        select: { name: true },
-        take: 25,
-      })
-      menuItems = products.map(p => p.name)
-    }
+    const menuItems = await getLocationMenuNames(locationSlug)
 
     const menuStr = menuItems.length > 0
-      ? 'Available drinks: ' + menuItems.join(', ')
-      : 'Available drinks: espresso, cappuccino, latte, flat white, americano, cold brew, hot chocolate'
+      ? 'Доступні напої з нашого меню: ' + menuItems.join(', ')
+      : 'Доступні напої: espresso, cappuccino, latte, flat white, americano, cold brew, hot chocolate'
 
-    const prompt = `You are a friendly PerkUp barista. A customer says they feel: "${mood}".
+    const prompt = `Ти — дружній бариста PerkUp. Клієнт каже, що відчуває себе: "${mood}".
 ${menuStr}.
-Recommend ONE specific drink from the list and explain in 2 sentences why it suits their mood.
-Write in English. Be warm and personal. No lists.`
+Порекомендуй ОДИН конкретний напій ТІЛЬКИ зі списку вище і поясни у 2-3 реченнях чому він підходить під цей настрій.
+Пиши українською. Будь теплим і особистим. Без списків, без маркерів.`
 
-    const recommendation = await callClaude(prompt, 200)
+    const recommendation = await callClaude(prompt, 250)
     const matched = menuItems.find(name =>
       recommendation.toLowerCase().includes(name.toLowerCase())
     )
 
     return reply.send({ success: true, recommendation, matchedDrink: matched || null })
+  })
+
+  // GET /api/ai/personal-recommend?locationSlug=xxx
+  app.get('/personal-recommend', { preHandler: requireAuth }, async (req: any, reply) => {
+    const { locationSlug } = req.query as { locationSlug?: string }
+    const userId: number = req.user.id
+
+    const cacheKey = `ai:personal:${userId}:${locationSlug || 'default'}:${todayKey()}`
+    const cached = await redisCache.get(cacheKey)
+    if (cached) return reply.send({ success: true, ...JSON.parse(cached) })
+
+    // Get user's recent completed orders with product names
+    const recentOrders = await prisma.order.findMany({
+      where: { userId, status: 'COMPLETED' },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: {
+        items: {
+          include: { product: { select: { name: true, category: true } } },
+        },
+      },
+    })
+
+    const orderedProducts = recentOrders
+      .flatMap(o => o.items)
+      .filter(item => item.product)
+      .map(item => item.product!.name)
+
+    // Count frequency
+    const freq: Record<string, number> = {}
+    for (const name of orderedProducts) {
+      freq[name] = (freq[name] || 0) + 1
+    }
+    const favorites = Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name)
+
+    const menuItems = await getLocationMenuNames(locationSlug)
+
+    const hasHistory = favorites.length > 0
+    const historyStr = hasHistory
+      ? `Улюблені напої клієнта (за частотою замовлень): ${favorites.join(', ')}.`
+      : 'Клієнт ще не робив замовлень.'
+
+    const menuStr = menuItems.length > 0
+      ? 'Доступні напої з нашого меню: ' + menuItems.join(', ')
+      : 'Доступні напої: espresso, cappuccino, latte, flat white, americano, cold brew, hot chocolate'
+
+    const prompt = hasHistory
+      ? `Ти — дружній бариста PerkUp. ${historyStr}
+${menuStr}.
+На основі вподобань клієнта, порекомендуй ОДИН напій ТІЛЬКИ зі списку доступних напоїв, який він ще НЕ пробував або який йому може сподобатись. Поясни у 2-3 реченнях чому саме цей напій.
+Пиши українською. Будь теплим і особистим. Без списків.`
+      : `Ти — дружній бариста PerkUp. Новий клієнт ще не робив замовлень.
+${menuStr}.
+Порекомендуй ОДИН найпопулярніший напій ТІЛЬКИ зі списку доступних для першого знайомства з нашим меню. Поясни у 2-3 реченнях чому варто почати саме з нього.
+Пиши українською. Будь теплим і привітним. Без списків.`
+
+    const recommendation = await callClaude(prompt, 250)
+    const matched = menuItems.find(name =>
+      recommendation.toLowerCase().includes(name.toLowerCase())
+    )
+
+    const payload = { recommendation, matchedDrink: matched || null, favorites, hasHistory }
+    await redisCache.set(cacheKey, JSON.stringify(payload), 'EX', CACHE_1H)
+    return reply.send({ success: true, ...payload })
   })
 
   // GET /api/ai/daily-challenge

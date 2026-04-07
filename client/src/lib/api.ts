@@ -66,12 +66,19 @@ export const loyaltyApi = {
 export const mediaUrl = (fileId: string) => `${BASE_URL}/api/media/${fileId}`
 
 export const aiApi = {
-  weatherMenu: () => api.get('/api/ai/weather-menu'),
+  weatherMenu: (locationSlug?: string) => api.get('/api/ai/weather-menu', { params: { locationSlug } }),
   cardOfDay: () => api.get('/api/ai/card-of-day'),
   coffeeFact: () => api.get('/api/ai/coffee-fact'),
   moodMenu: (mood: string, locationSlug?: string) => api.post('/api/ai/mood-menu', { mood, locationSlug }),
+  personalRecommend: (locationSlug?: string) => api.get('/api/ai/personal-recommend', { params: { locationSlug } }),
   dailyChallenge: () => api.get('/api/ai/daily-challenge'),
   claimChallenge: () => api.post('/api/ai/daily-challenge/claim'),
+}
+
+export const gameApi = {
+  submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
+  getLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
+  getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
 }
 
 export const radioApi = {

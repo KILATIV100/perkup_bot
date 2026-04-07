@@ -6,7 +6,7 @@ import ProfilePage from './pages/ProfilePage'
 import OnboardingPage from './pages/OnboardingPage'
 import BonusesPage from './pages/BonusesPage'
 import AiPage from './pages/AiPage'
-import RadioPage from './pages/RadioPage'
+import FunPage from './pages/FunPage'
 import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
@@ -33,7 +33,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/menu" replace />} />
           <Route path="/menu" element={<MenuPage />} />
-          <Route path="/radio" element={<RadioPage />} />
+          <Route path="/fun" element={<FunPage />} />
+          <Route path="/radio" element={<Navigate to="/fun" replace />} />
           <Route path="/ai" element={<AiPage />} />
           <Route path="/bonuses" element={<BonusesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
