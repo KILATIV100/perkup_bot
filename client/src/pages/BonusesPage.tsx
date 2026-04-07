@@ -1,40 +1,51 @@
-import { useState, useEffect, useRef } from 'react'
-import { api } from '../lib/api'
+import { useAuthStore } from '../stores/auth'
 
-interface LoyaltyStatus {
-  points: number
-  level: string
-  multiplier: number
-  nextLevel: { name: string; required: number } | null
-  spinsAvailable: number
-  completedOrders: number
-  transactions: Array<{ id: number; amount: number; type: string; description: string; createdAt: string }>
-  vouchers: Array<{ id: number; code: string; prizeLabel: string; prizeType: string; expiresAt: string }>
-}
+export default function BonusesPage() {
+  const { user } = useAuthStore()
 
-interface Prize {
-  id: string
-  label: string
-  emoji: string
-  type: string
-  value: number
-  weight: number
-}
+  return (
+    <div className="p-4 pb-24">
+      <h1 className="text-2xl font-bold mb-4 text-coffee-800">Лояльність</h1>
+      
+      <div className="bg-white p-5 rounded-2xl shadow-sm mb-4 border border-coffee-100 flex items-center justify-between">
+        <div>
+          <p className="text-gray-500 text-sm">Ваш рівень</p>
+          <p className="text-2xl font-bold text-coffee-600">{user?.level || 'Bronze'}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-gray-500 text-sm">Баланс</p>
+          <p className="text-2xl font-bold text-coffee-600">{user?.points || 0}</p>
+        </div>
+      </div>
 
-const WHEEL_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f97316', '#0891b2', '#6b7280']
+      <div className="bg-coffee-50 p-6 rounded-2xl shadow-inner mb-4 text-center border border-coffee-200">
+        <h2 className="text-xl font-bold mb-2">Колесо Фортуни 🎡</h2>
+        <p className="text-sm text-gray-600 mb-5">Крути колесо та отримуй подарунки! 1 спін = кожні 5 замовлень.</p>
+        <button className="bg-coffee-600 text-white px-8 py-3 rounded-full font-bold shadow-md active:scale-95 transition-transform">
+          Крутити (Доступно: 0)
+        </button>
+      </div>
 
-function buildWheelGradient(prizes: Prize[]): string {
-  const total = prizes.reduce((s, p) => s + p.weight, 0)
-  let cum = 0
-  return prizes.map((p, i) => {
-    const start = (cum / total) * 360
-    cum += p.weight
-    const end = (cum / total) * 360
-    return `${WHEEL_COLORS[i % WHEEL_COLORS.length]} ${start.toFixed(1)}deg ${end.toFixed(1)}deg`
-  }).join(', ')
-}
-
-function getSegmentCenter(prizes: Prize[], idx: number): number {
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+        <h3 className="font-bold mb-3 text-gray-800">Як працюють бонуси?</h3>
+        <ul className="space-y-3 text-sm text-gray-600">
+          <li className="flex items-start gap-2">
+            <span className="text-coffee-500 mt-0.5">•</span>
+            <span>Отримуй <b>1 бал</b> за кожні 5 грн у чеку.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-coffee-500 mt-0.5">•</span>
+            <span>Оплачуй балами до <b>20%</b> вартості (1 бал = 1 грн).</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-coffee-500 mt-0.5">•</span>
+            <span><b>Рівні:</b> Bronze (0-299), Silver (300-999), Gold (1000-2999), Platinum (3000+). Вищий рівень = швидше накопичення!</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  )
+}function getSegmentCenter(prizes: Prize[], idx: number): number {
   const total = prizes.reduce((s, p) => s + p.weight, 0)
   let cum = 0
   for (let i = 0; i < idx; i++) cum += prizes[i].weight
@@ -266,80 +277,50 @@ export default function BonusesPage() {
         )}
 
         {/* RULES TAB */}
-        {activeTab === 'rules' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
-              <div className="font-semibold text-coffee-800">Нарахування балів</div>
-              <div className="text-sm text-gray-600 space-y-1">
-                <div>• 1 бал за кожні 5 грн замовлення</div>
-                <div>• Множник залежить від рівня</div>
-                <div>• Бали нараховуються після виконання замовлення</div>
-              </div>
-            </div>
+        import { useAuthStore } from '../stores/auth'
 
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
-              <div className="font-semibold text-coffee-800">Списання балів</div>
-              <div className="text-sm text-gray-600 space-y-1">
-                <div>• 1 бал = 1 грн знижки</div>
-                <div>• Максимум 20% від суми замовлення</div>
-                <div>• Обирайте при оформленні замовлення</div>
-              </div>
-            </div>
+export default function BonusesPage() {
+  const { user } = useAuthStore()
 
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
-              <div className="font-semibold text-coffee-800 mb-3">Рівні та множники</div>
-              <div className="space-y-2">
-                {LEVELS.map(l => (
-                  <div key={l.name} className={`flex items-center justify-between p-2 rounded-xl ${
-                    currentLevel.name === l.name ? 'bg-coffee-50 border border-coffee-200' : ''
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full bg-gradient-to-br ${l.color}`} />
-                      <span className="text-sm font-medium">{l.name}</span>
-                      {currentLevel.name === l.name && (
-                        <span className="text-[10px] bg-coffee-600 text-white px-1.5 py-0.5 rounded-full">Ваш</span>
-                      )}
-                    </div>
-                    <div className="text-right text-xs text-gray-500">
-                      <div>{l.max === Infinity ? `${l.min}+` : `${l.min}–${l.max}`} балів</div>
-                      <div className="font-semibold text-coffee-600">{l.multiplier}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+  return (
+    <div className="p-4 pb-24">
+      <h1 className="text-2xl font-bold mb-4 text-coffee-800">Лояльність</h1>
+      
+      <div className="bg-white p-5 rounded-2xl shadow-sm mb-4 border border-coffee-100 flex items-center justify-between">
+        <div>
+          <p className="text-gray-500 text-sm">Ваш рівень</p>
+          <p className="text-2xl font-bold text-coffee-600">{user?.level || 'Bronze'}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-gray-500 text-sm">Баланс</p>
+          <p className="text-2xl font-bold text-coffee-600">{user?.points || 0}</p>
+        </div>
+      </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
-              <div className="font-semibold text-coffee-800">Колесо фортуни</div>
-              <div className="text-sm text-gray-600 space-y-1">
-                <div>• Кожне 5-те завершене замовлення = 1 спін</div>
-                <div>• Призи: бали, ваучери, знижки</div>
-                <div>• Ваучери дійсні 7 днів після отримання</div>
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="bg-coffee-50 p-6 rounded-2xl shadow-inner mb-4 text-center border border-coffee-200">
+        <h2 className="text-xl font-bold mb-2">Колесо Фортуни 🎡</h2>
+        <p className="text-sm text-gray-600 mb-5">Крути колесо та отримуй подарунки! 1 спін = кожні 5 замовлень.</p>
+        <button className="bg-coffee-600 text-white px-8 py-3 rounded-full font-bold shadow-md active:scale-95 transition-transform">
+          Крутити (Доступно: 0)
+        </button>
+      </div>
 
-        {/* HISTORY TAB */}
-        {activeTab === 'history' && (
-          <div className="space-y-2">
-            {loading && <div className="text-center text-gray-400 py-8">Завантаження...</div>}
-            {!loading && (status?.transactions?.length ?? 0) === 0 && (
-              <div className="text-center text-gray-400 py-8">Немає транзакцій</div>
-            )}
-            {status?.transactions?.map(tx => (
-              <div key={tx.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-700">{tx.description}</div>
-                  <div className="text-xs text-gray-400">{new Date(tx.createdAt).toLocaleDateString('uk-UA')}</div>
-                </div>
-                <div className={`font-semibold text-sm ${tx.amount > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  {tx.amount > 0 ? '+' : ''}{tx.amount}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+        <h3 className="font-bold mb-3 text-gray-800">Як працюють бонуси?</h3>
+        <ul className="space-y-3 text-sm text-gray-600">
+          <li className="flex items-start gap-2">
+            <span className="text-coffee-500 mt-0.5">•</span>
+            <span>Отримуй <b>1 бал</b> за кожні 5 грн у чеку.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-coffee-500 mt-0.5">•</span>
+            <span>Оплачуй балами до <b>20%</b> вартості (1 бал = 1 грн).</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-coffee-500 mt-0.5">•</span>
+            <span><b>Рівні:</b> Bronze (0-299), Silver (300-999), Gold (1000-2999), Platinum (3000+). Вищий рівень = швидше накопичення!</span>
+          </li>
+        </ul>
       </div>
     </div>
   )
