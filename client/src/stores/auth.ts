@@ -35,22 +35,36 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
 
       login: async () => {
+        // Already authenticated - skip
+        if (get().isAuthenticated && get().user) return
+
         set({ isLoading: true })
         try {
           const tg = window.Telegram?.WebApp
-          if (!tg?.initData) throw new Error('Not in Telegram')
+          if (tg?.initData) {
+            // In Telegram - use initData
+            const res = await authApi.loginWithTelegram(tg.initData)
+            const { token, user } = res.data
+            localStorage.setItem('perkup_token', token)
+            set({ token, user, isAuthenticated: true, isLoading: false })
+            window.__hideSplash?.()
+            return
+          }
 
-          const res = await authApi.loginWithTelegram(tg.initData)
-          const { token, user } = res.data
+          // Not in Telegram - try saved token
+          const savedToken = localStorage.getItem('perkup_token')
+          if (savedToken) {
+            try {
+              const res = await authApi.getMe()
+              const user = res.data.user
+              set({ token: savedToken, user, isAuthenticated: true, isLoading: false })
+              return
+            } catch {
+              localStorage.removeItem('perkup_token')
+            }
+          }
 
-          localStorage.setItem('perkup_token', token)
-          set({ token, user, isAuthenticated: true, isLoading: false })
-
-          // Hide splash screen
-          window.__hideSplash?.()
-        } catch (err) {
-          console.error('Auth error:', err)
-          // In dev mode, fallback to backend dev-login to keep API flows working.
+          // Dev fallback
           if (import.meta.env.DEV) {
             try {
               const res = await authApi.devLogin()
@@ -59,11 +73,12 @@ export const useAuthStore = create<AuthState>()(
               set({ token, user, isAuthenticated: true, isLoading: false })
               window.__hideSplash?.()
               return
-            } catch (devErr) {
-              console.error('Dev login error:', devErr)
-            }
+            } catch {}
           }
 
+          set({ isLoading: false })
+        } catch (err) {
+          console.error('Auth error:', err)
           set({ isLoading: false })
         }
       },
