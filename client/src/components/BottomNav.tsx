@@ -39,9 +39,4 @@ export default function BottomNav() {
       </div>
     </nav>
   )
-}          </NavLink>
-        ))}
-      </div>
-    </nav>
-  )
 }
