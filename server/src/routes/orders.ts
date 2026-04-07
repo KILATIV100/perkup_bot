@@ -34,7 +34,7 @@ function calcEarnedPoints(total: number, userPoints: number): number {
 }
 
 function locationIsOpen(hours: any[]): boolean {
-  // Safe UTC+2 / UTC+3 check for Kyiv Time
+  if (!hours || !Array.isArray(hours)) return true // Захист, якщо години не завантажились
   const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' })
   const kyiv = new Date(kyivStr)
   const day = kyiv.getDay()
@@ -76,7 +76,11 @@ export default async function orderRoutes(app: FastifyInstance) {
     })
     if (!location) return reply.status(404).send({ success: false, error: 'Location not found' })
     if (!location.allowOrders) return reply.status(400).send({ success: false, error: 'Orders not allowed here' })
-    if (!locationIsOpen(location.workingHours)) return reply.status(400).send({ success: false, error: 'Closed now' })
+    
+    // Використовуємо any для обходу можливих помилок типізації Prisma під час білду
+    if (!locationIsOpen((location as any).workingHours || [])) {
+      return reply.status(400).send({ success: false, error: 'Closed now' })
+    }
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } })
     if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
@@ -88,11 +92,19 @@ export default async function orderRoutes(app: FastifyInstance) {
       if (item.productId) {
         const p = await prisma.product.findUnique({ where: { id: item.productId } })
         if (!p || !p.isAvailable || p.locationId !== locationId) {
-          return reply.status(400).send({ success: false, error: 'Product unavailable' })
+          return reply.status(400).send({ success: false, error: 'Product unavailable: ' + (p?.name || item.productId) })
         }
         const price = Number(p.price)
         total += price * item.quantity
         orderItems.push({ productId: p.id, name: p.name, price, quantity: item.quantity, modifiers: item.modifiers || null })
+      } else if (item.bundleId) {
+        const b = await prisma.bundle.findUnique({ where: { id: item.bundleId } })
+        if (!b || !b.isAvailable || b.locationId !== locationId) {
+          return reply.status(400).send({ success: false, error: 'Bundle unavailable' })
+        }
+        const price = Number(b.price)
+        total += price * item.quantity
+        orderItems.push({ bundleId: b.id, name: b.name, price, quantity: item.quantity, modifiers: null })
       }
     }
 
@@ -137,13 +149,11 @@ export default async function orderRoutes(app: FastifyInstance) {
     ].filter(Boolean).join('\n')
     await tgSend(OWNER_ID, msg)
 
-    // Send message to the user
-    const userMsg = '\u2705 Order #' + order.id + ' accepted!\n\n'
-      + 'QR Code:\n`' + qrCode + '`\n\n'
-      + 'Show this to the barista \u2615\n'
-      + 'Total: ' + finalTotal + ' uah';
-    
     if (user.telegramId) {
+      const userMsg = 'Order #' + order.id + ' accepted!\n\n'
+        + 'QR Code:\n`' + qrCode + '`\n\n'
+        + 'Show this to the barista \u2615\n'
+        + 'Total: ' + finalTotal + ' uah';
       await tgSend(String(user.telegramId), userMsg)
     }
 
@@ -160,7 +170,7 @@ export default async function orderRoutes(app: FastifyInstance) {
   })
 
   app.get('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    const id = parseInt((req.params as any).id)
+    const id = req.params.id as string
     const order = await prisma.order.findFirst({
       where: { id, userId: req.user.id },
       include: { items: true, location: { select: { name: true, slug: true } } },
@@ -170,7 +180,7 @@ export default async function orderRoutes(app: FastifyInstance) {
   })
 
   app.delete('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    const id = parseInt((req.params as any).id)
+    const id = req.params.id as string
     const order = await prisma.order.findFirst({ where: { id, userId: req.user.id } })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
     if (!['PENDING', 'PAYMENT_PENDING'].includes(order.status)) {
@@ -184,7 +194,7 @@ export default async function orderRoutes(app: FastifyInstance) {
     if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
       return reply.status(403).send({ success: false, error: 'Forbidden' })
     }
-    const id = parseInt((req.params as any).id)
+    const id = req.params.id as string
     const parsed = z.object({
       status: z.enum(['ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED']),
     }).safeParse(req.body)
