@@ -7,18 +7,16 @@ import MenuPage from './pages/MenuPage'
 import ProfilePage from './pages/ProfilePage'
 import OnboardingPage from './pages/OnboardingPage'
 import BonusesPage from './pages/BonusesPage'
-import FunPage from './pages/FunPage'
+import AiPage from './pages/AiPage'
+import RadioPage from './pages/RadioPage'
 import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
-import AiPage from './pages/AiPage'
-import RadioPage from './pages/RadioPage'
 
 // Components
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
-import RadioPlayer from './components/RadioPlayer'
 
 export default function App() {
   const { login, isAuthenticated, isLoading, user } = useAuthStore()
@@ -28,7 +26,7 @@ export default function App() {
   }, [])
 
   if (isLoading) return <LoadingScreen />
-  if (!isAuthenticated) return <LoadingScreen message="Авторизація..." />
+  if (!isAuthenticated) return <LoadingScreen message="Loading..." />
   if (user && !user.onboardingDone) return <OnboardingPage />
 
   return (
@@ -46,43 +44,11 @@ export default function App() {
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/orders/:id" element={<OrderStatusPage />} />
-          <Route path="/fun" element={<FunPage />} />
           
           <Route path="*" element={<Navigate to="/menu" replace />} />
         </Routes>
       </main>
       <BottomNav />
-      <RadioPlayer />
-    </div>
-  )
-}  if (isLoading) return <LoadingScreen />
-
-  if (!isAuthenticated) return <LoadingScreen message="Авторизація..." />
-
-  if (user && !user.onboardingDone) {
-    return <OnboardingPage />
-  }
-
-  return (
-    <div className="min-h-screen bg-coffee-50 flex flex-col">
-      <Header />
-      <main className="flex-1 pb-safe">
-        <Routes>
-          <Route path="/" element={<Navigate to="/menu" replace />} />
-          <Route path="/menu" element={<MenuPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/bonuses" element={<BonusesPage />} />
-          <Route path="/fun" element={<FunPage />} />
-          <Route path="/ai" element={<AiPage />} />
-          <Route path="/radio" element={<RadioPage />} />
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/orders/:id" element={<OrderStatusPage />} />
-          <Route path="*" element={<Navigate to="/menu" replace />} />
-        </Routes>
-      </main>
-      <BottomNav />
-      <RadioPlayer />
     </div>
   )
 }
