@@ -13,19 +13,12 @@ import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
 import AiPage from './pages/AiPage'
 import RadioPage from './pages/RadioPage'
+
+// Components
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
 import RadioPlayer from './components/RadioPlayer'
-
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp: any
-    }
-    __hideSplash?: () => void
-  }
-}
 
 export default function App() {
   const { login, isAuthenticated, isLoading, user } = useAuthStore()
@@ -35,6 +28,34 @@ export default function App() {
   }, [])
 
   if (isLoading) return <LoadingScreen />
+  if (!isAuthenticated) return <LoadingScreen message="Авторизація..." />
+  if (user && !user.onboardingDone) return <OnboardingPage />
+
+  return (
+    <div className="min-h-screen bg-coffee-50 flex flex-col">
+      <Header />
+      <main className="flex-1 pb-safe">
+        <Routes>
+          <Route path="/" element={<Navigate to="/menu" replace />} />
+          <Route path="/menu" element={<MenuPage />} />
+          <Route path="/radio" element={<RadioPage />} />
+          <Route path="/ai" element={<AiPage />} />
+          <Route path="/bonuses" element={<BonusesPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/orders/:id" element={<OrderStatusPage />} />
+          <Route path="/fun" element={<FunPage />} />
+          
+          <Route path="*" element={<Navigate to="/menu" replace />} />
+        </Routes>
+      </main>
+      <BottomNav />
+      <RadioPlayer />
+    </div>
+  )
+}  if (isLoading) return <LoadingScreen />
 
   if (!isAuthenticated) return <LoadingScreen message="Авторизація..." />
 
