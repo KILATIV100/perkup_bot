@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'https://api.perkup.com.ua'
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://server-production-1a00.up.railway.app'
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -8,21 +8,14 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('perkup_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
-
-  // Attach Telegram initData for auth requests
   const tg = window.Telegram?.WebApp
-  if (tg?.initData) {
-    config.headers['X-Telegram-Init-Data'] = tg.initData
-  }
-
+  if (tg?.initData) config.headers['X-Telegram-Init-Data'] = tg.initData
   return config
 })
 
-// Handle 401 - re-auth
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
@@ -34,40 +27,25 @@ api.interceptors.response.use(
   }
 )
 
-// Auth
 export const authApi = {
-  loginWithTelegram: (initData: string) =>
-    api.post('/api/auth/telegram', { initData }),
-  devLogin: (telegramId?: number, firstName?: string) =>
-    api.post('/api/auth/dev-login', { telegramId, firstName }),
+  loginWithTelegram: (initData: string) => api.post('/api/auth/telegram', { initData }),
+  devLogin: (telegramId?: number, firstName?: string) => api.post('/api/auth/dev-login', { telegramId, firstName }),
   getMe: () => api.get('/api/auth/me'),
-  completeOnboarding: (data: {
-    preferredLocationId?: number
-    birthDate?: string
-    language?: string
-  }) => api.patch('/api/auth/onboarding', data),
+  completeOnboarding: (data: { preferredLocationId?: number; birthDate?: string; language?: string }) =>
+    api.patch('/api/auth/onboarding', data),
 }
 
-// Locations
 export const locationsApi = {
-  getAll: (lat?: number, lng?: number) =>
-    api.get('/api/locations', { params: { lat, lng } }),
-  getBySlug: (slug: string) =>
-    api.get(`/api/locations/${slug}`),
+  getAll: (lat?: number, lng?: number) => api.get('/api/locations', { params: { lat, lng } }),
+  getBySlug: (slug: string) => api.get(`/api/locations/${slug}`),
 }
 
-// Menu
 export const menuApi = {
-  getMenu: (locationSlug: string, params?: {
-    category?: string
-    search?: string
-    tags?: string
-  }) => api.get(`/api/menu/${locationSlug}`, { params }),
-  getCategories: (locationSlug: string) =>
-    api.get(`/api/menu/${locationSlug}/categories`),
+  getMenu: (locationSlug: string, params?: { category?: string; search?: string; tags?: string }) =>
+    api.get(`/api/menu/${locationSlug}`, { params }),
+  getCategories: (locationSlug: string) => api.get(`/api/menu/${locationSlug}/categories`),
 }
 
-// Orders
 export const ordersApi = {
   create: (data: any) => api.post('/api/orders', data),
   pay: (id: number, paymentId: string) => api.post(`/api/orders/${id}/pay`, { paymentId }),
@@ -76,7 +54,6 @@ export const ordersApi = {
   cancel: (id: number) => api.delete(`/api/orders/${id}`),
 }
 
-// Loyalty
 export const loyaltyApi = {
   getStatus: () => api.get('/api/loyalty/status'),
   getPrizes: () => api.get('/api/loyalty/prizes'),
@@ -86,22 +63,17 @@ export const loyaltyApi = {
   getReferralLink: () => api.get('/api/loyalty/referral'),
 }
 
-// Media
-export const mediaUrl = (fileId: string) =>
-  `${BASE_URL}/api/media/${fileId}`
+export const mediaUrl = (fileId: string) => `${BASE_URL}/api/media/${fileId}`
 
-// AI
 export const aiApi = {
   weatherMenu: () => api.get('/api/ai/weather-menu'),
   cardOfDay: () => api.get('/api/ai/card-of-day'),
   coffeeFact: () => api.get('/api/ai/coffee-fact'),
-  moodMenu: (mood: string, locationSlug?: string) =>
-    api.post('/api/ai/mood-menu', { mood, locationSlug }),
+  moodMenu: (mood: string, locationSlug?: string) => api.post('/api/ai/mood-menu', { mood, locationSlug }),
   dailyChallenge: () => api.get('/api/ai/daily-challenge'),
   claimChallenge: () => api.post('/api/ai/daily-challenge/claim'),
 }
 
-// Radio
 export const radioApi = {
   playlist: () => api.get('/api/radio/playlist'),
   now: () => api.get('/api/radio/now'),
