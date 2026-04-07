@@ -22,25 +22,7 @@ export default function App() {
     login().finally(() => setInitialized(true))
   }, [])
 
-  // Show loading only while login is in progress
   if (!initialized || isLoading) return <LoadingScreen />
-
-  // Not authenticated after init - show menu anyway (guest mode) or re-try
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-coffee-50 flex items-center justify-center p-6">
-        <div className="text-center">
-          <div className="text-6xl mb-4">☕</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">PerkUp</h2>
-          <p className="text-gray-500 text-sm mb-6">Відкрий через Telegram бота</p>
-          <button onClick={() => { login().finally(() => setInitialized(true)) }}
-            className="bg-amber-700 text-white px-6 py-3 rounded-2xl font-semibold">
-            Спробувати знову
-          </button>
-        </div>
-      </div>
-    )
-  }
 
   if (user && !user.onboardingDone) return <OnboardingPage />
 
