@@ -15,9 +15,7 @@ async function tgSend(chatId: string, text: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
     })
-  } catch (e) {
-    console.error('tgSend error:', e)
-  }
+  } catch (e) { console.error('tgSend error:', e) }
 }
 
 function getLevelMultiplier(points: number): number {
@@ -34,7 +32,7 @@ function calcEarnedPoints(total: number, userPoints: number): number {
 }
 
 function locationIsOpen(hours: any[]): boolean {
-  if (!hours || !Array.isArray(hours)) return true // Захист, якщо години не завантажились
+  if (!hours || !Array.isArray(hours)) return true
   const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' })
   const kyiv = new Date(kyivStr)
   const day = kyiv.getDay()
@@ -45,7 +43,6 @@ function locationIsOpen(hours: any[]): boolean {
 }
 
 export default async function orderRoutes(app: FastifyInstance) {
-
   async function requireAuth(req: any, reply: any) {
     try { await req.jwtVerify() } catch {
       return reply.status(401).send({ success: false, error: 'Unauthorized' })
@@ -54,17 +51,18 @@ export default async function orderRoutes(app: FastifyInstance) {
 
   app.post('/', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const schema = z.object({
-      locationId:    z.string(),
-      items:         z.array(z.object({
-        productId: z.string().optional(),
-        bundleId:  z.string().optional(),
-        quantity:  z.number().min(1).max(20),
+      locationId: z.number().int().positive(),
+      items: z.array(z.object({
+        productId: z.number().int().positive().optional(),
+        bundleId: z.number().int().positive().optional(),
+        quantity: z.number().min(1).max(20),
         modifiers: z.record(z.string()).optional(),
       })).min(1),
       paymentMethod: z.enum(['cash', 'card']).default('cash'),
-      comment:       z.string().max(300).optional(),
-      pointsUsed:    z.number().min(0).default(0),
+      comment: z.string().max(300).optional(),
+      pointsUsed: z.number().min(0).default(0),
     })
+
     const result = schema.safeParse(req.body)
     if (!result.success) return reply.status(400).send({ success: false, error: 'Invalid request' })
 
@@ -76,8 +74,6 @@ export default async function orderRoutes(app: FastifyInstance) {
     })
     if (!location) return reply.status(404).send({ success: false, error: 'Location not found' })
     if (!location.allowOrders) return reply.status(400).send({ success: false, error: 'Orders not allowed here' })
-    
-    // Використовуємо any для обходу можливих помилок типізації Prisma під час білду
     if (!locationIsOpen((location as any).workingHours || [])) {
       return reply.status(400).send({ success: false, error: 'Closed now' })
     }
@@ -114,14 +110,21 @@ export default async function orderRoutes(app: FastifyInstance) {
       const maxDiscount = Math.floor(total * 0.2)
       discount = Math.min(pointsUsed, maxDiscount)
     }
+
     const finalTotal = Math.max(0, total - discount)
     const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
 
     const order = await prisma.order.create({
       data: {
-        userId: user.id, locationId,
-        status: 'PENDING', total: finalTotal, discount,
-        paymentMethod, comment: comment || null, pointsUsed, qrCode,
+        userId: user.id,
+        locationId,
+        status: 'PENDING',
+        total: finalTotal,
+        discount,
+        paymentMethod,
+        comment: comment || null,
+        pointsUsed,
+        qrCode,
         items: { create: orderItems },
       },
       include: { items: true },
@@ -147,13 +150,11 @@ export default async function orderRoutes(app: FastifyInstance) {
       comment ? 'Note: ' + comment : '',
       'QR: ' + qrCode,
     ].filter(Boolean).join('\n')
+
     await tgSend(OWNER_ID, msg)
 
     if (user.telegramId) {
-      const userMsg = 'Order #' + order.id + ' accepted!\n\n'
-        + 'QR Code:\n`' + qrCode + '`\n\n'
-        + 'Show this to the barista \u2615\n'
-        + 'Total: ' + finalTotal + ' uah';
+      const userMsg = 'Order #' + order.id + ' accepted!\n\nQR Code:\n`' + qrCode + '`\n\nShow this to the barista\nTotal: ' + finalTotal + ' uah'
       await tgSend(String(user.telegramId), userMsg)
     }
 
@@ -164,13 +165,14 @@ export default async function orderRoutes(app: FastifyInstance) {
     const orders = await prisma.order.findMany({
       where: { userId: req.user.id },
       include: { items: true, location: { select: { name: true, slug: true } } },
-      orderBy: { createdAt: 'desc' }, take: 20,
+      orderBy: { createdAt: 'desc' },
+      take: 20,
     })
     return reply.send({ success: true, orders })
   })
 
   app.get('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    const id = req.params.id as string
+    const id = Number(req.params.id)
     const order = await prisma.order.findFirst({
       where: { id, userId: req.user.id },
       include: { items: true, location: { select: { name: true, slug: true } } },
@@ -180,7 +182,7 @@ export default async function orderRoutes(app: FastifyInstance) {
   })
 
   app.delete('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    const id = req.params.id as string
+    const id = Number(req.params.id)
     const order = await prisma.order.findFirst({ where: { id, userId: req.user.id } })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
     if (!['PENDING', 'PAYMENT_PENDING'].includes(order.status)) {
@@ -194,13 +196,16 @@ export default async function orderRoutes(app: FastifyInstance) {
     if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
       return reply.status(403).send({ success: false, error: 'Forbidden' })
     }
-    const id = req.params.id as string
+    const id = Number(req.params.id)
     const parsed = z.object({
       status: z.enum(['ACCEPTED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED']),
     }).safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid status' })
 
-    const order = await prisma.order.findUnique({ where: { id }, include: { user: true } })
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { user: true },
+    })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
 
     await prisma.order.update({ where: { id }, data: { status: parsed.data.status } })
@@ -213,7 +218,8 @@ export default async function orderRoutes(app: FastifyInstance) {
         if (!exists) {
           await prisma.pointsTransaction.create({ data: {
             userId: order.userId, amount: pts, type: 'ORDER',
-            description: 'Points for order #' + id, idempotencyKey: key,
+            description: 'Points for order #' + id,
+            idempotencyKey: key,
           }})
           await prisma.user.update({
             where: { id: order.userId },
@@ -225,8 +231,8 @@ export default async function orderRoutes(app: FastifyInstance) {
     }
 
     const statusMsg: Record<string, string> = {
-      ACCEPTED:  'Order #' + id + ' accepted! Preparing your coffee',
-      READY:     'Order #' + id + ' is ready! Pick it up',
+      ACCEPTED: 'Order #' + id + ' accepted! Preparing your coffee',
+      READY: 'Order #' + id + ' is ready! Pick it up',
       CANCELLED: 'Order #' + id + ' cancelled.',
     }
     if (statusMsg[parsed.data.status]) {
