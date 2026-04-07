@@ -78,8 +78,9 @@ export const ordersApi = {
 
 // Loyalty
 export const loyaltyApi = {
-  spin: (lat: number, lng: number) =>
-    api.post('/api/loyalty/spin', { lat, lng }),
+  getStatus: () => api.get('/api/loyalty/status'),
+  getPrizes: () => api.get('/api/loyalty/prizes'),
+  spin: () => api.post('/api/loyalty/spin'),
   redeem: () => api.post('/api/loyalty/redeem'),
   getTransactions: () => api.get('/api/loyalty/transactions'),
   getReferralLink: () => api.get('/api/loyalty/referral'),

@@ -3,7 +3,7 @@ import clsx from 'clsx'
 
 const tabs = [
   { path: '/menu',    emoji: '☕', label: 'Меню' },
-  { path: '/cart',    emoji: '🛒', label: 'Кошик' },
+  { path: '/radio',   emoji: '🎵', label: 'Радіо' },
   { path: '/ai',      emoji: '✨', label: 'AI' },
   { path: '/bonuses', emoji: '🎡', label: 'Бонуси' },
   { path: '/profile', emoji: '👤', label: 'Я' },
