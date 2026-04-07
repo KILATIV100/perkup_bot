@@ -34,9 +34,11 @@ function calcEarnedPoints(total: number, userPoints: number): number {
 }
 
 function locationIsOpen(hours: any[]): boolean {
-  const now = new Date(Date.now() + 2 * 3600000)
-  const day = now.getUTCDay()
-  const t = now.getUTCHours().toString().padStart(2, '0') + ':' + now.getUTCMinutes().toString().padStart(2, '0')
+  // Use Intl to get the real Kyiv wall-clock time (UTC+2 winter / UTC+3 summer)
+  const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' })
+  const kyiv = new Date(kyivStr)
+  const day = kyiv.getDay()
+  const t = kyiv.getHours().toString().padStart(2, '0') + ':' + kyiv.getMinutes().toString().padStart(2, '0')
   const wh = hours.find((h: any) => h.dayOfWeek === day)
   if (!wh || wh.isClosed) return false
   return t >= wh.openTime && t < wh.closeTime
@@ -142,6 +144,14 @@ export default async function orderRoutes(app: FastifyInstance) {
       'QR: ' + qrCode,
     ].filter(Boolean).join('\n')
     await tgSend(OWNER_ID, msg)
+
+    // Notify the customer with their QR code
+    const userMsg = 'Order #' + order.id + ' received!\n'
+      + '\u2615 ' + location.name + '\n'
+      + 'Total: ' + finalTotal + ' uah\n'
+      + '\nYour QR code:\n`' + qrCode + '`\n'
+      + 'Show to the barista when picking up.'
+    await tgSend(String(user.telegramId), userMsg)
 
     return reply.send({ success: true, orderId: order.id, qrCode, total: finalTotal, status: 'PENDING' })
   })
