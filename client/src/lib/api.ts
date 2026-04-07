@@ -88,3 +88,23 @@ export const loyaltyApi = {
 // Media
 export const mediaUrl = (fileId: string) =>
   `${BASE_URL}/api/media/${fileId}`
+
+// AI
+export const aiApi = {
+  weatherMenu: () => api.get('/api/ai/weather-menu'),
+  cardOfDay: () => api.get('/api/ai/card-of-day'),
+  coffeeFact: () => api.get('/api/ai/coffee-fact'),
+  moodMenu: (mood: string, locationSlug?: string) =>
+    api.post('/api/ai/mood-menu', { mood, locationSlug }),
+  dailyChallenge: () => api.get('/api/ai/daily-challenge'),
+  claimChallenge: () => api.post('/api/ai/daily-challenge/claim'),
+}
+
+// Radio
+export const radioApi = {
+  playlist: () => api.get('/api/radio/playlist'),
+  now: () => api.get('/api/radio/now'),
+  addTrack: (data: { fileId: string; title: string; url: string; artist?: string; duration?: number; genre?: string }) =>
+    api.post('/api/radio/add-track', data),
+  setGenre: (genre: string) => api.post('/api/radio/user-genre', { genre }),
+}
