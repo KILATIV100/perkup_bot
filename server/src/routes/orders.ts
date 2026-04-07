@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import crypto from 'crypto'
 import { prisma } from '../lib/prisma'
-import { redisCache } from '../lib/redis'
+import { redis } from '../lib/redis'
 
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID || '7363233852'
 const BOT = process.env.BOT_TOKEN || ''
@@ -34,7 +34,7 @@ function calcEarnedPoints(total: number, userPoints: number): number {
 }
 
 function locationIsOpen(hours: any[]): boolean {
-  // Use Intl to get the real Kyiv wall-clock time (UTC+2 winter / UTC+3 summer)
+  // Safe UTC+2 / UTC+3 check for Kyiv Time
   const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' })
   const kyiv = new Date(kyivStr)
   const day = kyiv.getDay()
@@ -54,10 +54,10 @@ export default async function orderRoutes(app: FastifyInstance) {
 
   app.post('/', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const schema = z.object({
-      locationId:    z.number(),
+      locationId:    z.string(),
       items:         z.array(z.object({
-        productId: z.number().optional(),
-        bundleId:  z.number().optional(),
+        productId: z.string().optional(),
+        bundleId:  z.string().optional(),
         quantity:  z.number().min(1).max(20),
         modifiers: z.record(z.string()).optional(),
       })).min(1),
@@ -88,19 +88,11 @@ export default async function orderRoutes(app: FastifyInstance) {
       if (item.productId) {
         const p = await prisma.product.findUnique({ where: { id: item.productId } })
         if (!p || !p.isAvailable || p.locationId !== locationId) {
-          return reply.status(400).send({ success: false, error: 'Product unavailable: ' + (p?.name || item.productId) })
+          return reply.status(400).send({ success: false, error: 'Product unavailable' })
         }
         const price = Number(p.price)
         total += price * item.quantity
         orderItems.push({ productId: p.id, name: p.name, price, quantity: item.quantity, modifiers: item.modifiers || null })
-      } else if (item.bundleId) {
-        const b = await prisma.bundle.findUnique({ where: { id: item.bundleId } })
-        if (!b || !b.isAvailable || b.locationId !== locationId) {
-          return reply.status(400).send({ success: false, error: 'Bundle unavailable' })
-        }
-        const price = Number(b.price)
-        total += price * item.quantity
-        orderItems.push({ bundleId: b.id, name: b.name, price, quantity: item.quantity, modifiers: null })
       }
     }
 
@@ -132,7 +124,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       }})
     }
 
-    await redisCache.del('menu:' + location.slug)
+    await redis.del('menu:' + location.slug)
 
     const itemLines = orderItems.map((i: any) => '- ' + i.name + ' x' + i.quantity + ' = ' + (i.price * i.quantity) + ' uah').join('\n')
     const msg = [
@@ -145,13 +137,15 @@ export default async function orderRoutes(app: FastifyInstance) {
     ].filter(Boolean).join('\n')
     await tgSend(OWNER_ID, msg)
 
-    // Notify the customer with their QR code
-    const userMsg = 'Order #' + order.id + ' received!\n'
-      + '\u2615 ' + location.name + '\n'
-      + 'Total: ' + finalTotal + ' uah\n'
-      + '\nYour QR code:\n`' + qrCode + '`\n'
-      + 'Show to the barista when picking up.'
-    await tgSend(String(user.telegramId), userMsg)
+    // Send message to the user
+    const userMsg = '\u2705 Order #' + order.id + ' accepted!\n\n'
+      + 'QR Code:\n`' + qrCode + '`\n\n'
+      + 'Show this to the barista \u2615\n'
+      + 'Total: ' + finalTotal + ' uah';
+    
+    if (user.telegramId) {
+      await tgSend(String(user.telegramId), userMsg)
+    }
 
     return reply.send({ success: true, orderId: order.id, qrCode, total: finalTotal, status: 'PENDING' })
   })
