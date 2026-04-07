@@ -2,11 +2,11 @@ import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
 
 const tabs = [
-  { path: '/menu',    emoji: '☕', label: 'Меню' },
-  { path: '/radio',   emoji: '🎵', label: 'Радіо' },
-  { path: '/ai',      emoji: '✨', label: 'AI' },
-  { path: '/bonuses', emoji: '🎡', label: 'Бонуси' },
-  { path: '/profile', emoji: '👤', label: 'Я' },
+  { path: '/menu',    emoji: '\u2615', label: 'Меню' },
+  { path: '/radio',   emoji: '\uD83C\uDFB5', label: 'Радіо' },
+  { path: '/ai',      emoji: '\u2728', label: 'AI' },
+  { path: '/bonuses', emoji: '\uD83C\uDFA1', label: 'Бонуси' },
+  { path: '/profile', emoji: '\uD83D\uDC64', label: 'Я' },
 ]
 
 export default function BottomNav() {
@@ -35,6 +35,11 @@ export default function BottomNav() {
               </>
             )}
           </NavLink>
+        ))}
+      </div>
+    </nav>
+  )
+}          </NavLink>
         ))}
       </div>
     </nav>
