@@ -11,9 +11,11 @@ import FunPage from './pages/FunPage'
 import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
+import AiPage from './pages/AiPage'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
+import RadioPlayer from './components/RadioPlayer'
 
 declare global {
   interface Window {
@@ -49,6 +51,7 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/bonuses" element={<BonusesPage />} />
           <Route path="/fun" element={<FunPage />} />
+          <Route path="/ai" element={<AiPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/orders/:id" element={<OrderStatusPage />} />
@@ -56,6 +59,7 @@ export default function App() {
         </Routes>
       </main>
       <BottomNav />
+      <RadioPlayer />
     </div>
   )
 }

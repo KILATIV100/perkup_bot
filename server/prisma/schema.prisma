@@ -78,6 +78,7 @@ model User {
   notifMorning        Boolean   @default(true)
   notifPromo          Boolean   @default(true)
   onboardingDone      Boolean   @default(false)
+  radioGenre          String?
   isActive            Boolean   @default(true)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

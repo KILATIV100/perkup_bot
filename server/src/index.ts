@@ -17,6 +17,8 @@ import reviewRoutes from './routes/reviews'
 import notificationsRoutes from './routes/notifications'
 import healthRoutes from './routes/health'
 import posterWebhookRoutes from './routes/webhooks/poster'
+import aiRoutes from './routes/ai'
+import radioRoutes from './routes/radio'
 import { schedulePosterSync, startPosterSyncWorker } from './workers/posterSync'
 import { scheduleReminderJobs, startReminderWorker } from './workers/reminders'
 import { syncAllLocations } from './services/poster'
@@ -42,6 +44,8 @@ async function bootstrap() {
   await app.register(reviewRoutes,        { prefix: '/api/reviews' })
   await app.register(notificationsRoutes, { prefix: '/api/notifications' })
   await app.register(posterWebhookRoutes, { prefix: '/webhooks/poster' })
+  await app.register(aiRoutes,            { prefix: '/api/ai' })
+  await app.register(radioRoutes,         { prefix: '/api/radio' })
   app.setErrorHandler((error, _req, reply) => {
     if (error.statusCode === 429) return reply.status(429).send({ success: false, error: 'Too many requests' })
     if (error.statusCode && error.statusCode < 500) return reply.status(error.statusCode).send({ success: false, error: error.message })
