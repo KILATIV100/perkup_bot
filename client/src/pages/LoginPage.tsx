@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
 import { useT } from '../lib/i18n'
@@ -13,6 +14,7 @@ declare global {
 
 export default function LoginPage() {
   const { updateUser } = useAuthStore()
+  const navigate = useNavigate()
   const widgetRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -92,6 +94,14 @@ export default function LoginPage() {
         <p className="text-[10px] text-gray-300">
           {t('login.terms')}
         </p>
+
+        {/* Back to menu */}
+        <button
+          onClick={() => navigate('/menu')}
+          className="text-sm text-coffee-500 font-medium active:scale-95 transition-transform"
+        >
+          ← {t('login.backToMenu')}
+        </button>
       </div>
     </div>
   )

@@ -23,6 +23,9 @@ const translations: Record<string, Record<Lang, string>> = {
   'common.km': { uk: 'км', en: 'km' },
 
   // ─── Login ───
+  'login.signIn': { uk: 'Увійти', en: 'Sign in' },
+  'login.guestBanner': { uk: 'Увійди через Telegram, щоб замовляти каву та отримувати бонуси!', en: 'Sign in with Telegram to order coffee and earn bonuses!' },
+  'login.backToMenu': { uk: 'Повернутись до меню', en: 'Back to menu' },
   'login.terms': { uk: 'Натискаючи кнопку, ви погоджуєтесь з умовами використання', en: 'By clicking, you agree to the terms of use' },
   'login.authDesc': { uk: 'Авторизуйся, щоб переглядати меню, робити замовлення та отримувати бонуси', en: 'Sign in to browse the menu, place orders, and earn bonuses' },
 

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { menuApi } from '../lib/api'
 import { useLocationStore } from '../stores/location'
 import { useCartStore } from '../stores/cart'
+import { useAuthStore } from '../stores/auth'
 import { useT } from '../lib/i18n'
 
 type MenuProduct = {
@@ -26,6 +27,7 @@ export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const { addItem, getTotalItems, clearIfDifferentLocation } = useCartStore()
   const totalItems = getTotalItems()
+  const { isAuthenticated } = useAuthStore()
   const t = useT()
 
   const CATEGORY_LABELS: Record<string, string> = {
@@ -78,6 +80,18 @@ export default function MenuPage() {
 
   return (
     <div className="p-4 space-y-4 pb-28">
+      {/* Guest login banner */}
+      {!isAuthenticated && (
+        <button
+          onClick={() => navigate('/login')}
+          className="w-full bg-gradient-to-r from-coffee-600 to-coffee-500 text-white rounded-2xl p-4 text-sm flex items-center gap-3 active:scale-[0.98] transition-transform shadow-md"
+        >
+          <span className="text-2xl">✨</span>
+          <span className="flex-1 text-left font-medium">{t('login.guestBanner')}</span>
+          <span className="text-coffee-200">→</span>
+        </button>
+      )}
+
       {activeLocation.format === 'SELF_SERVICE' && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 text-sm">
           {t('menu.selfServiceBanner')}
@@ -113,7 +127,7 @@ export default function MenuPage() {
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-coffee-700 whitespace-nowrap">{Number(p.price).toFixed(0)} {t('common.currency')}</div>
-                  {activeLocation.allowOrders && (
+                  {activeLocation.allowOrders && isAuthenticated && (
                     <button
                       onClick={() => {
                         clearIfDifferentLocation(activeLocation.id)
@@ -131,7 +145,7 @@ export default function MenuPage() {
         </section>
       ))}
 
-      {activeLocation.allowOrders && totalItems > 0 && (
+      {activeLocation.allowOrders && isAuthenticated && totalItems > 0 && (
         <button onClick={() => navigate('/cart')} className="fixed left-3 right-3 bottom-20 z-40 px-4 py-3 rounded-2xl bg-coffee-700 text-white shadow-xl">
           {t('menu.goToCart')} ({totalItems})
         </button>

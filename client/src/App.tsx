@@ -27,9 +27,8 @@ export default function App() {
 
   if (!initialized || isLoading) return <LoadingScreen />
 
-  if (!isAuthenticated || !user) return <LoginPage />
-
-  if (user && !user.onboardingDone) return <OnboardingPage />
+  // Authenticated but no onboarding — show onboarding
+  if (isAuthenticated && user && !user.onboardingDone) return <OnboardingPage />
 
   return (
     <div className="min-h-screen bg-coffee-50 flex flex-col">
@@ -41,13 +40,15 @@ export default function App() {
           <Route path="/fun" element={<FunPage />} />
           <Route path="/radio" element={<Navigate to="/fun" replace />} />
           <Route path="/ai" element={<AiPage />} />
-          <Route path="/bonuses" element={<BonusesPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/orders/:id" element={<OrderStatusPage />} />
+          <Route path="/login" element={isAuthenticated ? <Navigate to="/menu" replace /> : <LoginPage />} />
+          {/* Auth-required routes */}
+          <Route path="/bonuses" element={isAuthenticated ? <BonusesPage /> : <LoginPage />} />
+          <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <LoginPage />} />
+          <Route path="/settings" element={isAuthenticated ? <SettingsPage /> : <LoginPage />} />
+          <Route path="/admin" element={isAuthenticated ? <AdminPage /> : <LoginPage />} />
+          <Route path="/cart" element={isAuthenticated ? <CartPage /> : <LoginPage />} />
+          <Route path="/checkout" element={isAuthenticated ? <CheckoutPage /> : <LoginPage />} />
+          <Route path="/orders/:id" element={isAuthenticated ? <OrderStatusPage /> : <LoginPage />} />
           <Route path="*" element={<Navigate to="/menu" replace />} />
         </Routes>
       </main>

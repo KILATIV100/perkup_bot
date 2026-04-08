@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocationStore } from '../stores/location'
 import { useCartStore } from '../stores/cart'
+import { useAuthStore } from '../stores/auth'
 import { locationsApi } from '../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -11,6 +12,7 @@ export default function Header() {
   const [showPicker, setShowPicker] = useState(false)
   const { locations, activeLocation, setLocations, setActiveLocation } = useLocationStore()
   const cartCount = useCartStore(s => s.getTotalItems())
+  const { isAuthenticated } = useAuthStore()
   const navigate = useNavigate()
   const t = useT()
 
@@ -71,17 +73,26 @@ export default function Header() {
           <span className="text-coffee-200">▾</span>
         </button>
 
-        {/* Notification / Cart */}
-        <div className="relative">
-          <button className="w-10 h-10 flex items-center justify-center" onClick={() => navigate('/cart')}>
-            🛒
+        {/* Cart / Login */}
+        {isAuthenticated ? (
+          <div className="relative">
+            <button className="w-10 h-10 flex items-center justify-center" onClick={() => navigate('/cart')}>
+              🛒
+            </button>
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-coffee-400 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold badge-bounce">
+                {cartCount}
+              </span>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={() => navigate('/login')}
+            className="bg-white text-coffee-700 text-sm font-bold px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+          >
+            {t('login.signIn')}
           </button>
-          {cartCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-coffee-400 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold badge-bounce">
-              {cartCount}
-            </span>
-          )}
-        </div>
+        )}
       </header>
 
       {/* Location Picker Modal */}
