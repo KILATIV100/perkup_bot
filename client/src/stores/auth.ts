@@ -36,8 +36,19 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
 
       login: async () => {
-        // Already authenticated - skip
-        if (get().isAuthenticated && get().user) return
+        // Already authenticated and user exists - validate token
+        const current = get()
+        if (current.isAuthenticated && current.user && current.token) {
+          try {
+            const res = await authApi.getMe()
+            set({ user: res.data.user, isLoading: false })
+            return
+          } catch {
+            // Token expired — clear and continue as guest
+            localStorage.removeItem('perkup_token')
+            set({ user: null, token: null, isAuthenticated: false, isLoading: false })
+          }
+        }
 
         set({ isLoading: true })
         try {
@@ -77,10 +88,11 @@ export const useAuthStore = create<AuthState>()(
             } catch {}
           }
 
-          set({ isLoading: false })
+          // No auth method worked — continue as guest
+          set({ user: null, token: null, isAuthenticated: false, isLoading: false })
         } catch (err) {
           console.error('Auth error:', err)
-          set({ isLoading: false })
+          set({ user: null, token: null, isAuthenticated: false, isLoading: false })
         }
       },
 

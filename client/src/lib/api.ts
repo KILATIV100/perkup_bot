@@ -21,7 +21,7 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('perkup_token')
-      window.location.reload()
+      // Don't reload — let the app handle guest state gracefully
     }
     return Promise.reject(error)
   }
