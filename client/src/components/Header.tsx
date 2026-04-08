@@ -5,18 +5,20 @@ import { useCartStore } from '../stores/cart'
 import { locationsApi } from '../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-
-const LOCATION_FORMAT_LABELS: Record<string, string> = {
-  SELF_SERVICE: 'Самообслуговування',
-  TO_GO: 'To go',
-  FAMILY_CAFE: 'Сімейне кафе',
-}
+import { useT } from '../lib/i18n'
 
 export default function Header() {
   const [showPicker, setShowPicker] = useState(false)
   const { locations, activeLocation, setLocations, setActiveLocation } = useLocationStore()
   const cartCount = useCartStore(s => s.getTotalItems())
   const navigate = useNavigate()
+  const t = useT()
+
+  const LOCATION_FORMAT_LABELS: Record<string, string> = {
+    SELF_SERVICE: t('header.selfService'),
+    TO_GO: t('header.toGo'),
+    FAMILY_CAFE: t('header.familyCafe'),
+  }
 
   useQuery({
     queryKey: ['locations'],
@@ -61,7 +63,7 @@ export default function Header() {
         >
           <span>📍</span>
           <span className="max-w-[120px] truncate">
-            {activeLocation?.name || 'Оберіть точку'}
+            {activeLocation?.name || t('header.chooseLocation')}
           </span>
           {activeLocation && (
             <span className={`w-2 h-2 rounded-full ${activeLocation.isOpen ? 'bg-green-400' : 'bg-red-400'}`} />
@@ -101,7 +103,7 @@ export default function Header() {
               className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto"
             >
               <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mb-6" />
-              <h2 className="text-xl font-bold text-coffee-600 mb-4">📍 Оберіть кав'ярню</h2>
+              <h2 className="text-xl font-bold text-coffee-600 mb-4">📍 {t('header.chooseCafe')}</h2>
 
               <div className="space-y-3">
                 {locations.map(loc => (
@@ -128,8 +130,8 @@ export default function Header() {
                         {loc.distanceMeters && (
                           <div className="text-xs text-coffee-500 mt-1">
                             📍 {loc.distanceMeters < 1000
-                              ? `${loc.distanceMeters} м`
-                              : `${(loc.distanceMeters / 1000).toFixed(1)} км`}
+                              ? `${loc.distanceMeters} ${t('common.m')}` 
+                              : `${(loc.distanceMeters / 1000).toFixed(1)} ${t('common.km')}`}
                           </div>
                         )}
                       </div>
@@ -137,14 +139,14 @@ export default function Header() {
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                           loc.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
                         }`}>
-                          {loc.isOpen ? '● Відчинено' : `Зачинено`}
+                          {loc.isOpen ? `● ${t('common.open')}` : t('common.closed')}
                         </span>
                         {!loc.isOpen && loc.nextOpenTime && (
-                          <span className="text-xs text-gray-400">відкриємось о {loc.nextOpenTime}</span>
+                          <span className="text-xs text-gray-400">{t('header.opensAt')} {loc.nextOpenTime}</span>
                         )}
                         {loc.busyMode && (
                           <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
-                            🔴 Запара
+                            🔴 {t('header.busyMode')}
                           </span>
                         )}
                       </div>

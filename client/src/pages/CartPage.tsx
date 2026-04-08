@@ -1,33 +1,35 @@
 import { useNavigate } from 'react-router-dom'
 import { useCartStore } from '../stores/cart'
+import { useT } from '../lib/i18n'
 
 export default function CartPage() {
   const navigate = useNavigate()
   const { items, updateItem, removeItem, getTotalPrice } = useCartStore()
+  const t = useT()
 
   if (!items.length) {
     return (
       <div className="p-4">
-        <h1 className="text-2xl font-bold text-coffee-700 mb-2">🛒 Кошик</h1>
-        <p className="text-gray-600">Кошик порожній</p>
+        <h1 className="text-2xl font-bold text-coffee-700 mb-2">{t('cart.title')}</h1>
+        <p className="text-gray-600">{t('cart.empty')}</p>
       </div>
     )
   }
 
   return (
     <div className="p-4 space-y-3 pb-28">
-      <h1 className="text-2xl font-bold text-coffee-700">🛒 Кошик</h1>
+      <h1 className="text-2xl font-bold text-coffee-700">{t('cart.title')}</h1>
       <div className="bg-coffee-50 border border-coffee-200 rounded-2xl p-3 text-sm text-coffee-900">
-        Оплата проводиться на касі у бариста цієї точки. У застосунку ти лише створюєш передзамовлення.
+        {t('cart.paymentNotice')}
       </div>
       {items.map((item) => (
         <div key={item.id} className="bg-white border border-gray-100 rounded-2xl p-3">
           <div className="flex justify-between items-center">
             <div>
               <div className="font-semibold">{item.name}</div>
-              <div className="text-sm text-gray-500">{Math.round(item.price)} грн</div>
+              <div className="text-sm text-gray-500">{Math.round(item.price)} {t('common.currency')}</div>
             </div>
-            <button onClick={() => removeItem(item.id)} className="text-red-500 text-sm">Видалити</button>
+            <button onClick={() => removeItem(item.id)} className="text-red-500 text-sm">{t('common.delete')}</button>
           </div>
           <div className="flex items-center gap-2 mt-2">
             <button className="px-2 py-1 border rounded" onClick={() => updateItem(item.id, { quantity: Math.max(1, item.quantity - 1) })}>-</button>
@@ -38,7 +40,7 @@ export default function CartPage() {
       ))}
 
       <button onClick={() => navigate('/checkout')} className="fixed left-3 right-3 bottom-20 z-40 px-4 py-3 rounded-2xl bg-coffee-700 text-white shadow-xl">
-        Оформити ({Math.round(getTotalPrice())} грн)
+        {t('cart.checkout')} ({Math.round(getTotalPrice())} {t('common.currency')})
       </button>
     </div>
   )

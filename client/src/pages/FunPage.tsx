@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import CoffeeJumpGame from '../components/CoffeeJumpGame'
 import { gameApi, radioApi } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 interface LeaderEntry {
   rank: number
@@ -43,6 +44,7 @@ export default function FunPage() {
   const [radioTrack, setRadioTrack] = useState<RadioTrack | null>(null)
   const [radioPlaying, setRadioPlaying] = useState(false)
   const [radioLoading, setRadioLoading] = useState(false)
+  const tFn = useT()
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const syncRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -139,10 +141,10 @@ export default function FunPage() {
       {/* Tabs */}
       <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10">
         {([
-          { key: 'game' as Tab, label: '🎮 Гра' },
-          { key: 'radio' as Tab, label: '🎵 Радіо' },
-          { key: 'leaderboard' as Tab, label: '🏆 Топ' },
-          { key: 'rewards' as Tab, label: '🎁 Нагороди' },
+          { key: 'game' as Tab, label: `🎮 ${tFn('fun.tab.game')}` },
+          { key: 'radio' as Tab, label: `🎵 ${tFn('fun.tab.radio')}` },
+          { key: 'leaderboard' as Tab, label: `🏆 ${tFn('fun.tab.top')}` },
+          { key: 'rewards' as Tab, label: `🎁 ${tFn('fun.tab.rewards')}` },
         ]).map(t => (
           <button
             key={t.key}
@@ -169,15 +171,15 @@ export default function FunPage() {
                 : 'bg-gray-50 border border-gray-100'
             }`}>
               {lastResult.isNewRecord && (
-                <div className="text-amber-600 font-bold text-base mb-1">🎉 Новий рекорд!</div>
+                <div className="text-amber-600 font-bold text-base mb-1">{tFn('fun.newRecord')}</div>
               )}
               <div className="flex justify-center gap-4 text-gray-700">
-                <span>Рахунок: <b>{lastScore}</b></span>
-                <span>Рекорд: <b>{lastResult.bestScore}</b></span>
-                {lastResult.rank && <span>Місце: <b>#{lastResult.rank}</b></span>}
+                <span>{tFn('fun.score')}: <b>{lastScore}</b></span>
+                <span>{tFn('fun.record')}: <b>{lastResult.bestScore}</b></span>
+                {lastResult.rank && <span>{tFn('fun.place')}: <b>#{lastResult.rank}</b></span>}
               </div>
               {lastResult.earnedPoints > 0 && (
-                <div className="mt-1 text-coffee-600 font-bold">+{lastResult.earnedPoints} бонусних балів! ☕</div>
+                <div className="mt-1 text-coffee-600 font-bold">+{lastResult.earnedPoints} {tFn('fun.bonusPoints')}! ☕</div>
               )}
             </div>
           )}
@@ -189,7 +191,7 @@ export default function FunPage() {
       {/* Leaderboard Tab */}
       {tab === 'leaderboard' && (
         <div className="flex-1 p-4 pb-24">
-          <h2 className="text-lg font-bold text-coffee-800 mb-3">🏆 Таблиця лідерів</h2>
+          <h2 className="text-lg font-bold text-coffee-800 mb-3">🏆 {tFn('fun.leaderboard')}</h2>
           {lbLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -199,7 +201,7 @@ export default function FunPage() {
           ) : leaderboard.length === 0 ? (
             <div className="text-center text-gray-400 py-12">
               <span className="text-4xl block mb-2">🎮</span>
-              Ще ніхто не грав. Будь першим!
+              {tFn('fun.noPlayers')}
             </div>
           ) : (
             <div className="space-y-2">
@@ -236,7 +238,7 @@ export default function FunPage() {
       {/* Rewards Tab */}
       {tab === 'rewards' && (
         <div className="flex-1 p-4 pb-24">
-          <h2 className="text-lg font-bold text-coffee-800 mb-3">🎁 Нагороди за гру</h2>
+          <h2 className="text-lg font-bold text-coffee-800 mb-3">🎁 {tFn('fun.gameRewards')}</h2>
 
           {statsLoading ? (
             <div className="space-y-3">
@@ -250,20 +252,20 @@ export default function FunPage() {
               <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
                   <div className="text-lg font-bold text-coffee-600">☕ {stats.bestScore}</div>
-                  <div className="text-[10px] text-gray-400">Рекорд</div>
+                  <div className="text-[10px] text-gray-400">{tFn('fun.record')}</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
                   <div className="text-lg font-bold text-coffee-600">{stats.rank ? `#${stats.rank}` : '—'}</div>
-                  <div className="text-[10px] text-gray-400">Місце</div>
+                  <div className="text-[10px] text-gray-400">{tFn('fun.place')}</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
                   <div className="text-lg font-bold text-coffee-600">{stats.playsToday}/{stats.playsLimit}</div>
-                  <div className="text-[10px] text-gray-400">Ігор сьогодні</div>
+                  <div className="text-[10px] text-gray-400">{tFn('fun.gamesToday')}</div>
                 </div>
               </div>
 
               {/* Reward milestones */}
-              <h3 className="font-bold text-gray-700 mb-2 text-sm">Нагороди за досягнення</h3>
+              <h3 className="font-bold text-gray-700 mb-2 text-sm">{tFn('fun.gameRewards')}</h3>
               <div className="space-y-2">
                 {stats.rewards.map((r) => {
                   const reached = stats.bestScore >= r.score
@@ -282,13 +284,13 @@ export default function FunPage() {
                         {r.claimed ? '✅' : reached ? '🎉' : '🔒'}
                       </div>
                       <div className="flex-1">
-                        <div className="font-bold text-sm text-gray-800">Набери {r.score.toLocaleString()} очків</div>
-                        <div className="text-xs text-gray-500">+{r.points} бонусних балів</div>
+                        <div className="font-bold text-sm text-gray-800">{tFn('fun.scoreNeeded', { n: r.score.toLocaleString() })}</div>
+                        <div className="text-xs text-gray-500">+{r.points} {tFn('fun.bonusPoints')}</div>
                       </div>
                       <div className={`text-xs font-bold px-2 py-1 rounded-full ${
                         r.claimed ? 'bg-green-100 text-green-700' : reached ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'
                       }`}>
-                        {r.claimed ? 'Отримано' : reached ? 'Досягнуто' : `${stats.bestScore}/${r.score}`}
+                        {r.claimed ? tFn('fun.claimed') : reached ? tFn('fun.achieved') : `${stats.bestScore}/${r.score}`}
                       </div>
                     </div>
                   )
@@ -349,14 +351,14 @@ export default function FunPage() {
                         style={{ height: `${8 + (i % 3) * 6}px`, animationDelay: `${i * 0.15}s` }}
                       />
                     ))}
-                    <span className="text-xs text-gray-400 ml-2">Грає зараз</span>
+                    <span className="text-xs text-gray-400 ml-2">{tFn('fun.nowPlaying')}</span>
                   </div>
                 )}
               </>
             ) : (
               <div className="text-gray-400 py-8">
                 <span className="text-4xl block mb-2">🎵</span>
-                Наразі немає доступних треків
+                {tFn('fun.noTracks')}
               </div>
             )}
           </div>

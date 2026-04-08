@@ -1,15 +1,18 @@
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
-
-const tabs = [
-  { path: '/menu',    emoji: '\u2615', label: 'Меню' },
-  { path: '/fun',     emoji: '\uD83C\uDFAE', label: 'Фан' },
-  { path: '/ai',      emoji: '\u2728', label: 'AI' },
-  { path: '/bonuses', emoji: '\uD83C\uDFA1', label: 'Бонуси' },
-  { path: '/profile', emoji: '\uD83D\uDC64', label: 'Я' },
-]
+import { useT } from '../lib/i18n'
 
 export default function BottomNav() {
+  const t = useT()
+
+  const tabs = [
+    { path: '/menu',    emoji: '\u2615', label: t('nav.menu') },
+    { path: '/ai',      emoji: '\u2728', label: t('nav.ai') },
+    { path: '/fun',     emoji: '\uD83C\uDFAE', label: t('nav.funZone') },
+    { path: '/bonuses', emoji: '\uD83C\uDFA1', label: t('nav.bonuses') },
+    { path: '/profile', emoji: '\uD83D\uDC64', label: t('nav.profile') },
+  ]
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-lg"
          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>

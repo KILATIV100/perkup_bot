@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { loyaltyApi } from '../lib/api'
 import FortuneWheel, { WheelPrize } from '../components/FortuneWheel'
+import { useT } from '../lib/i18n'
 
 interface Voucher {
   id: number
@@ -57,6 +58,7 @@ export default function BonusesPage() {
     prize: WheelPrize; voucherCode: string | null
   } | null>(null)
   const [showResult, setShowResult] = useState(false)
+  const t = useT()
 
   const loadStatus = useCallback(async () => {
     try {
@@ -122,11 +124,11 @@ export default function BonusesPage() {
       <div className={`bg-gradient-to-r ${LEVEL_COLORS[level] || LEVEL_COLORS.Bronze} p-5 rounded-2xl shadow-md text-white`}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-white/70 text-xs font-medium">Рівень</p>
+            <p className="text-white/70 text-xs font-medium">{t('bonuses.level')}</p>
             <p className="text-2xl font-bold">{LEVEL_EMOJIS[level]} {level}</p>
           </div>
           <div className="text-right">
-            <p className="text-white/70 text-xs font-medium">Баланс</p>
+            <p className="text-white/70 text-xs font-medium">{t('bonuses.balance')}</p>
             <p className="text-3xl font-bold">{status?.points || 0}</p>
           </div>
         </div>
@@ -134,7 +136,7 @@ export default function BonusesPage() {
         {nextLevel && (
           <div>
             <div className="flex justify-between text-xs text-white/80 mb-1">
-              <span>До {nextLevel.name}</span>
+              <span>{t('bonuses.nextLevel')} {nextLevel.name}</span>
               <span>{status?.points || 0} / {nextLevel.required}</span>
             </div>
             <div className="w-full bg-white/20 rounded-full h-2">
@@ -146,16 +148,16 @@ export default function BonusesPage() {
           </div>
         )}
         {!nextLevel && (
-          <p className="text-white/80 text-xs">Максимальний рівень досягнуто! x{status?.multiplier} множник</p>
+          <p className="text-white/80 text-xs">{t('profile.maxLevel')} x{status?.multiplier} {t('bonuses.multiplier').toLowerCase()}</p>
         )}
 
         <div className="flex gap-3 mt-3">
           <div className="bg-white/15 rounded-xl px-3 py-1.5 text-xs">
-            <span className="text-white/60">Множник: </span>
+            <span className="text-white/60">{t('bonuses.multiplier')}: </span>
             <span className="font-bold">x{status?.multiplier}</span>
           </div>
           <div className="bg-white/15 rounded-xl px-3 py-1.5 text-xs">
-            <span className="text-white/60">Замовлень: </span>
+            <span className="text-white/60">{t('bonuses.orders')}: </span>
             <span className="font-bold">{status?.completedOrders || 0}</span>
           </div>
         </div>
@@ -163,7 +165,7 @@ export default function BonusesPage() {
 
       {/* Fortune Wheel */}
       <div className="bg-coffee-50 rounded-2xl border border-coffee-200 p-4">
-        <h2 className="text-lg font-bold text-center text-coffee-800 mb-1">Колесо Фортуни 🎡</h2>
+        <h2 className="text-lg font-bold text-center text-coffee-800 mb-1">{t('bonuses.spinTitle')}</h2>
         <p className="text-xs text-center text-gray-500 mb-3">
           Спінів: <b className="text-coffee-600">{status?.spinsAvailable || 0}</b> · 1 спін = кожні 5 замовлень
         </p>
@@ -186,7 +188,7 @@ export default function BonusesPage() {
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
           }`}
         >
-          {spinning ? 'Крутиться...' : `Крутити (${status?.spinsAvailable || 0})`}
+          {spinning ? t('bonuses.spinning') : `${t('bonuses.spin')} (${status?.spinsAvailable || 0})`}
         </button>
       </div>
 
@@ -199,23 +201,23 @@ export default function BonusesPage() {
           >
             <div className="text-5xl mb-3">{spinResult.prize.emoji}</div>
             <h3 className="text-xl font-bold text-coffee-800 mb-1">
-              {spinResult.prize.type === 'nothing' ? 'Не пощастило 😔' : 'Вітаємо! 🎉'}
+              {spinResult.prize.type === 'nothing' ? t('bonuses.noLuck') : t('bonuses.congrats')}
             </h3>
             <p className="text-gray-600 mb-3">{spinResult.prize.label}</p>
             {spinResult.voucherCode && (
               <div className="bg-coffee-50 border border-coffee-200 rounded-xl p-3 mb-3">
-                <p className="text-xs text-gray-500">Ваш код:</p>
+                <p className="text-xs text-gray-500">{t('bonuses.yourCode')}</p>
                 <p className="text-2xl font-mono font-bold text-coffee-600 tracking-wider">
                   {spinResult.voucherCode}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">Дійсний 7 днів · Покажи бариста</p>
+                <p className="text-xs text-gray-400 mt-1">{t('bonuses.valid7days')} · {t('bonuses.showBarista')}</p>
               </div>
             )}
             <button
               onClick={dismissResult}
               className="w-full bg-coffee-600 text-white py-3 rounded-xl font-bold active:scale-[0.98] transition-transform"
             >
-              Супер!
+              {t('bonuses.great')}
             </button>
           </div>
         </div>
@@ -224,7 +226,7 @@ export default function BonusesPage() {
       {/* Active Vouchers */}
       {status && status.vouchers.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-          <h3 className="font-bold text-gray-800 mb-3">🎟️ Активні ваучери</h3>
+          <h3 className="font-bold text-gray-800 mb-3">{t('bonuses.activeVouchers')}</h3>
           <div className="space-y-2">
             {status.vouchers.map(v => (
               <div key={v.id} className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
@@ -246,7 +248,7 @@ export default function BonusesPage() {
       {/* Recent Transactions */}
       {status && status.transactions.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-          <h3 className="font-bold text-gray-800 mb-3">📊 Остання активність</h3>
+          <h3 className="font-bold text-gray-800 mb-3">{t('bonuses.history')}</h3>
           <div className="space-y-2">
             {status.transactions.slice(0, 6).map(t => (
               <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
@@ -267,19 +269,19 @@ export default function BonusesPage() {
 
       {/* Info */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-        <h3 className="font-bold mb-3 text-gray-800">Як працюють бонуси?</h3>
+        <h3 className="font-bold mb-3 text-gray-800">{t('bonuses.howItWorks')}</h3>
         <ul className="space-y-3 text-sm text-gray-600">
           <li className="flex items-start gap-2">
             <span className="text-coffee-500 mt-0.5">•</span>
-            <span>Отримуй <b>1 бал</b> за кожні 5 грн у чеку.</span>
+            <span>{t('bonuses.faq1')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-coffee-500 mt-0.5">•</span>
-            <span>Оплачуй балами до <b>20%</b> вартості (1 бал = 1 грн).</span>
+            <span>{t('bonuses.faq2')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-coffee-500 mt-0.5">•</span>
-            <span><b>Рівні:</b> Bronze → Silver (300) → Gold (1000) → Platinum (3000). Вищий рівень = швидше накопичення!</span>
+            <span>{t('bonuses.faq3')}</span>
           </li>
         </ul>
       </div>

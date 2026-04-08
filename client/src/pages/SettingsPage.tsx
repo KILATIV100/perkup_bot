@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
 import { authApi } from '../lib/api'
+import { useT } from '../lib/i18n'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const [notifPromo, setNotifPromo] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const t = useT()
 
   const handleLanguage = async (lang: 'uk' | 'en') => {
     setLanguage(lang)
@@ -54,7 +56,7 @@ export default function SettingsPage() {
         <button onClick={() => navigate('/profile')} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform">
           ←
         </button>
-        <h1 className="text-2xl font-bold text-coffee-800">Налаштування</h1>
+        <h1 className="text-2xl font-bold text-coffee-800">{t('settings.title')}</h1>
       </div>
 
       {/* Language */}
@@ -90,7 +92,7 @@ export default function SettingsPage() {
         </div>
 
         {saved && (
-          <p className="text-xs text-green-600 text-center">✅ {language === 'uk' ? 'Мову збережено' : 'Language saved'}</p>
+          <p className="text-xs text-green-600 text-center">✅ {t('settings.languageSaved')}</p>
         )}
       </div>
 
@@ -98,23 +100,23 @@ export default function SettingsPage() {
       <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-1">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-lg">🔔</span>
-          <h2 className="font-semibold text-gray-800">{language === 'uk' ? 'Сповіщення' : 'Notifications'}</h2>
+          <h2 className="font-semibold text-gray-800">{t('settings.notifications')}</h2>
         </div>
 
         <Toggle
-          label={language === 'uk' ? 'Спіни та бонуси' : 'Spins & bonuses'}
+          label={t('settings.notifSpin')}
           icon="🎰"
           value={notifSpin}
           onChange={(v) => handleToggle('notifSpin', v, setNotifSpin)}
         />
         <Toggle
-          label={language === 'uk' ? 'Ранкове привітання' : 'Morning greeting'}
+          label={t('settings.notifMorning')}
           icon="☀️"
           value={notifMorning}
           onChange={(v) => handleToggle('notifMorning', v, setNotifMorning)}
         />
         <Toggle
-          label={language === 'uk' ? 'Акції та промо' : 'Promos & offers'}
+          label={t('settings.notifPromo')}
           icon="🏷️"
           value={notifPromo}
           onChange={(v) => handleToggle('notifPromo', v, setNotifPromo)}
@@ -125,24 +127,24 @@ export default function SettingsPage() {
       <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-2">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">👤</span>
-          <h2 className="font-semibold text-gray-800">{language === 'uk' ? 'Акаунт' : 'Account'}</h2>
+          <h2 className="font-semibold text-gray-800">{t('settings.account')}</h2>
         </div>
 
         <div className="space-y-2 pb-2 border-b border-gray-100 mb-2">
-          <label className="text-sm text-gray-500">{language === 'uk' ? 'Телефон для передзамовлень' : 'Phone for preorders'}</label>
+          <label className="text-sm text-gray-500">{t('settings.phone')}</label>
           <div className="flex gap-2">
             <input value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" placeholder="+380501234567" inputMode="tel" />
             <button onClick={handlePhoneSave} disabled={saving} className="px-4 py-2 rounded-xl bg-coffee-600 text-white text-sm disabled:opacity-60">
-              {language === 'uk' ? 'Зберегти' : 'Save'}
+              {t('common.save')}
             </button>
           </div>
         </div>
 
-        <InfoRow label={language === 'uk' ? 'Ім\'я' : 'Name'} value={user?.firstName || '—'} />
+        <InfoRow label={t('settings.name')} value={user?.firstName || '—'} />
         {user?.username && <InfoRow label="Username" value={`@${user.username}`} />}
-        <InfoRow label={language === 'uk' ? 'Телефон' : 'Phone'} value={user?.phone || '—'} />
-        <InfoRow label={language === 'uk' ? 'Рівень' : 'Level'} value={user?.level || 'BRONZE'} />
-        <InfoRow label={language === 'uk' ? 'Бали' : 'Points'} value={String(user?.points || 0)} />
+        <InfoRow label={t('settings.phone')} value={user?.phone || '—'} />
+        <InfoRow label={t('settings.level')} value={user?.level || 'BRONZE'} />
+        <InfoRow label={t('settings.pointsLabel')} value={String(user?.points || 0)} />
       </div>
     </div>
   )

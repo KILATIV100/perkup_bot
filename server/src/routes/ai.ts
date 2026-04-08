@@ -89,7 +89,7 @@ export default async function aiRoutes(app: FastifyInstance) {
     let description = 'clear'
     try {
       const wRes = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${BROVARY_LAT}&lon=${BROVARY_LON}&appid=${WEATHER_API_KEY}&units=metric&lang=en`
+        `https://api.openweathermap.org/data/2.5/weather?lat=${BROVARY_LAT}&lon=${BROVARY_LON}&appid=${WEATHER_API_KEY}&units=metric&lang=uk`
       )
       const wData = await wRes.json() as WeatherResponse
       temp = Math.round(wData.main?.temp ?? 0)
@@ -110,7 +110,11 @@ ${menuStr}.
 Recommend ONE specific drink from the list above that best suits the current weather. Explain in 2-3 sentences why it's perfect for this weather. ONLY recommend drinks from the list.
 Write in Ukrainian. Be warm and weather-aware. No lists, no bullet points.`
 
-    const recommendation = await callClaude(prompt, 250)
+    let recommendation = await callClaude(prompt, 250)
+    if (!recommendation) {
+      const fallbackDrink = menuItems[0] || 'Лате'
+      recommendation = `Сьогодні ${weatherText} — чудовий час для ${fallbackDrink}. Приходь до PerkUp, і бариста приготує тобі ідеальну чашку!`
+    }
     const matched = menuItems.find(name =>
       recommendation.toLowerCase().includes(name.toLowerCase())
     )
@@ -175,7 +179,11 @@ ${menuStr}.
 Порекомендуй ОДИН конкретний напій ТІЛЬКИ зі списку вище і поясни у 2-3 реченнях чому він підходить під цей настрій.
 Пиши українською. Будь теплим і особистим. Без списків, без маркерів.`
 
-    const recommendation = await callClaude(prompt, 250)
+    let recommendation = await callClaude(prompt, 250)
+    if (!recommendation) {
+      const fallbackDrink = menuItems[0] || 'Капучіно'
+      recommendation = `Для настрою «${mood}» ми рекомендуємо ${fallbackDrink}. Саме та напій, що сьогодні підніме настрій!`
+    }
     const matched = menuItems.find(name =>
       recommendation.toLowerCase().includes(name.toLowerCase())
     )
@@ -240,7 +248,13 @@ ${menuStr}.
 Порекомендуй ОДИН найпопулярніший напій ТІЛЬКИ зі списку доступних для першого знайомства з нашим меню. Поясни у 2-3 реченнях чому варто почати саме з нього.
 Пиши українською. Будь теплим і привітним. Без списків.`
 
-    const recommendation = await callClaude(prompt, 250)
+    let recommendation = await callClaude(prompt, 250)
+    if (!recommendation) {
+      const fallbackDrink = (hasHistory ? favorites[0] : menuItems[0]) || 'Лате'
+      recommendation = hasHistory
+        ? `Ми бачимо, що тобі подобається ${favorites[0] || 'кава'}. Спробуй сьогодні ${fallbackDrink} — це чудовий вибір!`
+        : `Спробуй для початку ${fallbackDrink} — один з наших найпопулярніших напоїв. Бариста зробить його ідеальним!`
+    }
     const matched = menuItems.find(name =>
       recommendation.toLowerCase().includes(name.toLowerCase())
     )

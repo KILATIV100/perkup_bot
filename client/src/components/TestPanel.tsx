@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
 import { useLocationStore } from '../stores/location'
+import { useT } from '../lib/i18n'
 
 export default function TestPanel() {
   const { user, updateUser, logout } = useAuthStore()
@@ -10,11 +11,12 @@ export default function TestPanel() {
   const [result, setResult] = useState('')
   const [orderCount, setOrderCount] = useState(5)
   const [pointsValue, setPointsValue] = useState(500)
+  const t = useT()
 
   if (!user || (user.role !== 'OWNER' && user.role !== 'ADMIN')) return null
 
   const handleReset = async () => {
-    if (!confirm('Скинути весь прогрес та почати з онбордингу?')) return
+    if (!confirm(t('test.resetConfirm'))) return
     setLoading('reset')
     setResult('')
     try {
@@ -67,7 +69,7 @@ export default function TestPanel() {
     <div className="bg-amber-50 rounded-2xl border-2 border-amber-300 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <span className="text-lg">🧪</span>
-        <h3 className="font-bold text-amber-800">Тест-режим (Owner)</h3>
+        <h3 className="font-bold text-amber-800">{t('test.title')}</h3>
       </div>
 
       <p className="text-xs text-amber-700">
@@ -80,7 +82,7 @@ export default function TestPanel() {
         disabled={!!loading}
         className="w-full py-2.5 rounded-xl bg-red-500 text-white font-semibold text-sm disabled:opacity-50 active:scale-95 transition-transform"
       >
-        {loading === 'reset' ? '⏳ Скидання...' : '🔄 Скинути все та почати з початку'}
+        {loading === 'reset' ? '⏳ ...' : `🔄 ${t('test.reset')}`}
       </button>
 
       {/* Add Orders */}
@@ -98,7 +100,7 @@ export default function TestPanel() {
           disabled={!!loading}
           className="flex-1 py-2 rounded-xl bg-green-500 text-white font-semibold text-sm disabled:opacity-50 active:scale-95 transition-transform"
         >
-          {loading === 'orders' ? '⏳...' : `➕ Додати ${orderCount} замовлень`}
+          {loading === 'orders' ? '⏳...' : `➕ ${t('test.addOrders', { n: orderCount })}`}
         </button>
       </div>
 
@@ -117,7 +119,7 @@ export default function TestPanel() {
           disabled={!!loading}
           className="flex-1 py-2 rounded-xl bg-blue-500 text-white font-semibold text-sm disabled:opacity-50 active:scale-95 transition-transform"
         >
-          {loading === 'points' ? '⏳...' : `🎯 Встановити ${pointsValue} балів`}
+          {loading === 'points' ? '⏳...' : `🎯 ${t('test.setPoints', { n: pointsValue })}`}
         </button>
       </div>
 

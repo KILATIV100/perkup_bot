@@ -1,21 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useLocationStore } from '../stores/location'
 import { aiApi } from '../lib/api'
-
-const MOOD_OPTIONS = [
-  { emoji: '😊', label: 'Радісний', value: 'радісний, піднесений настрій' },
-  { emoji: '😴', label: 'Сонний', value: 'сонний, потрібна енергія' },
-  { emoji: '😰', label: 'Стрес', value: 'стрес, напруження' },
-  { emoji: '🥶', label: 'Замерз', value: 'холодно, хочу зігрітись' },
-  { emoji: '🤔', label: 'Задумливий', value: 'задумливий, хочу зосередитись' },
-  { emoji: '🥵', label: 'Спека', value: 'спекотно, хочу охолодитись' },
-  { emoji: '😌', label: 'Спокій', value: 'спокійний, розслаблений' },
-  { emoji: '💪', label: 'Енергія', value: 'хочу заряд енергії і бадьорості' },
-]
+import { useT } from '../lib/i18n'
 
 export default function AiPage() {
   const { activeLocation } = useLocationStore()
   const slug = activeLocation?.slug
+  const t = useT()
+
+  const MOOD_OPTIONS = [
+    { emoji: '😊', label: t('ai.mood.happy'), value: 'радісний, піднесений настрій' },
+    { emoji: '😴', label: t('ai.mood.sleepy'), value: 'сонний, потрібна енергія' },
+    { emoji: '😰', label: t('ai.mood.stressed'), value: 'стрес, напруження' },
+    { emoji: '🥶', label: t('ai.mood.cold'), value: 'холодно, хочу зігрітись' },
+    { emoji: '🤔', label: t('ai.mood.thinking'), value: 'задумливий, хочу зосередитись' },
+    { emoji: '🥵', label: t('ai.mood.hot'), value: 'спекотно, хочу охолодитись' },
+    { emoji: '😌', label: t('ai.mood.calm'), value: 'спокійний, розслаблений' },
+    { emoji: '💪', label: t('ai.mood.energy'), value: 'хочу заряд енергії і бадьорості' },
+  ]
 
   // Weather recommendation
   const [weather, setWeather] = useState<{ temp: number; description: string; recommendation: string; matchedDrink?: string } | null>(null)
@@ -30,7 +32,20 @@ export default function AiPage() {
   const [personal, setPersonal] = useState<{ recommendation: string; matchedDrink?: string; favorites: string[]; hasHistory: boolean } | null>(null)
   const [personalLoading, setPersonalLoading] = useState(false)
 
-  // Load weather on page open
+  // Card of Day
+  const [cardOfDay, setCardOfDay] = useState<{ drinkName: string; description: string } | null>(null)
+  const [cardLoading, setCardLoading] = useState(false)
+
+  // Coffee Fact
+  const [coffeeFact, setCoffeeFact] = useState<string | null>(null)
+  const [factLoading, setFactLoading] = useState(false)
+
+  // Daily Challenge
+  const [challenge, setChallenge] = useState<{ challenge: string; points: number; claimed: boolean } | null>(null)
+  const [challengeLoading, setChallengeLoading] = useState(false)
+  const [claiming, setClaiming] = useState(false)
+
+  // Load weather + card of day + fact + challenge on page open
   useEffect(() => {
     if (!slug) return
     setWeatherLoading(true)
@@ -39,6 +54,26 @@ export default function AiPage() {
       .catch(() => setWeather(null))
       .finally(() => setWeatherLoading(false))
   }, [slug])
+
+  useEffect(() => {
+    setCardLoading(true)
+    aiApi.cardOfDay()
+      .then(res => setCardOfDay(res.data))
+      .catch(() => setCardOfDay(null))
+      .finally(() => setCardLoading(false))
+
+    setFactLoading(true)
+    aiApi.coffeeFact()
+      .then(res => setCoffeeFact(res.data?.fact || null))
+      .catch(() => setCoffeeFact(null))
+      .finally(() => setFactLoading(false))
+
+    setChallengeLoading(true)
+    aiApi.dailyChallenge()
+      .then(res => setChallenge(res.data))
+      .catch(() => setChallenge(null))
+      .finally(() => setChallengeLoading(false))
+  }, [])
 
   const handleMood = async (mood: string) => {
     if (!slug) return
@@ -69,24 +104,34 @@ export default function AiPage() {
     }
   }
 
+  const handleClaim = async () => {
+    if (claiming || !challenge || challenge.claimed) return
+    setClaiming(true)
+    try {
+      await aiApi.claimChallenge()
+      setChallenge(prev => prev ? { ...prev, claimed: true } : null)
+    } catch { /* ignore */ }
+    finally { setClaiming(false) }
+  }
+
   if (!activeLocation) {
     return (
       <div className="p-4 pb-24 text-center text-gray-500">
-        Оберіть локацію у хедері, щоб отримати персональні рекомендації.
+        {t('ai.selectLocation')}
       </div>
     )
   }
 
   return (
     <div className="p-4 pb-24 space-y-5">
-      <h1 className="text-2xl font-bold text-coffee-800">Бариста AI ✨</h1>
-      <p className="text-xs text-gray-400">Рекомендації з меню: {activeLocation.name}</p>
+      <h1 className="text-2xl font-bold text-coffee-800">{t('ai.title')}</h1>
+      <p className="text-xs text-gray-400">{t('ai.locationHint')} {activeLocation.name}</p>
 
       {/* === WEATHER BLOCK === */}
       <div className="bg-gradient-to-br from-blue-50 to-sky-50 p-4 rounded-2xl border border-blue-100">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-2xl">🌤️</span>
-          <h2 className="font-bold text-blue-800">Погода і напій</h2>
+          <h2 className="font-bold text-blue-800">{t('ai.weather')}</h2>
         </div>
         {weatherLoading ? (
           <div className="space-y-2 animate-pulse">
@@ -97,7 +142,7 @@ export default function AiPage() {
         ) : weather ? (
           <>
             <p className="text-blue-700 font-medium text-sm mb-1">
-              Зараз {weather.temp}°C, {weather.description}
+              {t('ai.weatherNow')} {weather.temp}°C, {weather.description}
             </p>
             <p className="text-sm text-gray-700 leading-relaxed">{weather.recommendation}</p>
             {weather.matchedDrink && (
@@ -107,7 +152,7 @@ export default function AiPage() {
             )}
           </>
         ) : (
-          <p className="text-sm text-gray-400">Не вдалося завантажити рекомендацію</p>
+          <p className="text-sm text-gray-400">{t('common.loadFailed')}</p>
         )}
       </div>
 
@@ -115,7 +160,7 @@ export default function AiPage() {
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-2xl">🎭</span>
-          <h2 className="font-bold text-gray-800">Підбір за настроєм</h2>
+          <h2 className="font-bold text-gray-800">{t('ai.mood')}</h2>
         </div>
         <div className="grid grid-cols-4 gap-2 mb-3">
           {MOOD_OPTIONS.map(m => (
@@ -156,16 +201,16 @@ export default function AiPage() {
       <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-4 rounded-2xl border border-amber-100">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-2xl">🔮</span>
-          <h2 className="font-bold text-amber-800">Персональна рекомендація</h2>
+          <h2 className="font-bold text-amber-800">{t('ai.personal')}</h2>
         </div>
-        <p className="text-xs text-amber-600 mb-3">На основі твоїх попередніх замовлень</p>
+        <p className="text-xs text-amber-600 mb-3">{t('ai.personalSubtitle')}</p>
 
         {!personal && !personalLoading && (
           <button
             onClick={handlePersonal}
             className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors active:scale-[0.98]"
           >
-            Отримати рекомендацію
+            {t('ai.getRecommendation')}
           </button>
         )}
 
@@ -181,7 +226,7 @@ export default function AiPage() {
           <div>
             {personal.hasHistory && personal.favorites.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-2">
-                <span className="text-xs text-amber-600">Твої улюблені:</span>
+                <span className="text-xs text-amber-600">{t('ai.favorites')}</span>
                 {personal.favorites.map(f => (
                   <span key={f} className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{f}</span>
                 ))}
@@ -197,9 +242,83 @@ export default function AiPage() {
               onClick={handlePersonal}
               className="mt-3 w-full text-amber-600 text-sm font-medium py-2 rounded-xl border border-amber-200 hover:bg-amber-50 transition-colors active:scale-[0.98]"
             >
-              Оновити рекомендацію
+              {t('ai.refreshRecommendation')}
             </button>
           </div>
+        )}
+      </div>
+
+      {/* === CARD OF DAY === */}
+      <div className="bg-gradient-to-br from-rose-50 to-pink-50 p-4 rounded-2xl border border-rose-100">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-2xl">🃏</span>
+          <h2 className="font-bold text-rose-800">{t('ai.cardOfDay')}</h2>
+        </div>
+        {cardLoading ? (
+          <div className="space-y-2 animate-pulse">
+            <div className="h-5 bg-rose-100 rounded w-1/3" />
+            <div className="h-4 bg-rose-100 rounded w-full" />
+            <div className="h-4 bg-rose-100 rounded w-2/3" />
+          </div>
+        ) : cardOfDay ? (
+          <>
+            <div className="text-lg font-bold text-rose-700 mb-1">{cardOfDay.drinkName}</div>
+            <p className="text-sm text-gray-700 leading-relaxed italic">{cardOfDay.description}</p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-400">{t('common.loadFailed')}</p>
+        )}
+      </div>
+
+      {/* === COFFEE FACT === */}
+      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-4 rounded-2xl border border-emerald-100">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-2xl">💡</span>
+          <h2 className="font-bold text-emerald-800">{t('ai.coffeeFact')}</h2>
+        </div>
+        {factLoading ? (
+          <div className="space-y-2 animate-pulse">
+            <div className="h-4 bg-emerald-100 rounded w-full" />
+            <div className="h-4 bg-emerald-100 rounded w-2/3" />
+          </div>
+        ) : coffeeFact ? (
+          <p className="text-sm text-gray-700 leading-relaxed">{coffeeFact}</p>
+        ) : (
+          <p className="text-sm text-gray-400">{t('common.loadFailed')}</p>
+        )}
+      </div>
+
+      {/* === DAILY CHALLENGE === */}
+      <div className="bg-gradient-to-br from-violet-50 to-indigo-50 p-4 rounded-2xl border border-violet-100">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-2xl">🎯</span>
+          <h2 className="font-bold text-violet-800">{t('ai.dailyChallenge')}</h2>
+        </div>
+        {challengeLoading ? (
+          <div className="space-y-2 animate-pulse">
+            <div className="h-4 bg-violet-100 rounded w-full" />
+            <div className="h-4 bg-violet-100 rounded w-1/2" />
+          </div>
+        ) : challenge ? (
+          <>
+            <p className="text-sm text-gray-700 leading-relaxed mb-3">{challenge.challenge}</p>
+            {challenge.claimed ? (
+              <div className="text-center text-sm text-violet-600 font-semibold bg-violet-100 rounded-xl py-2.5">
+                ✅ {t('ai.challengeDone')} +{challenge.points} {t('profile.points')}
+              </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleClaim}
+                disabled={claiming}
+                className="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl transition-colors active:scale-[0.98] disabled:opacity-60"
+              >
+                {claiming ? '⏳ ...' : t('ai.claimChallenge', { n: challenge.points })}
+              </button>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-gray-400">{t('common.loadFailed')}</p>
         )}
       </div>
     </div>

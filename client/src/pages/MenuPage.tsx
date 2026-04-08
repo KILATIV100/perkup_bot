@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { menuApi } from '../lib/api'
 import { useLocationStore } from '../stores/location'
 import { useCartStore } from '../stores/cart'
+import { useT } from '../lib/i18n'
 
 type MenuProduct = {
   id: number
@@ -18,23 +19,6 @@ type MenuCategory = {
   products: MenuProduct[]
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  coffee: '☕ Кава',
-  cold: '🧊 Холодні',
-  food: '🥐 Їжа',
-  sweets: '🍰 Солодощі',
-  addons: '➕ Добавки',
-  beans: '🌱 Зерно',
-  merch: '🎁 Мерч',
-  other: '📦 Інше',
-}
-
-const LOCATION_FORMAT_LABELS: Record<string, string> = {
-  SELF_SERVICE: 'самообслуговування',
-  TO_GO: 'to go',
-  FAMILY_CAFE: 'сімейне кафе',
-}
-
 export default function MenuPage() {
   const navigate = useNavigate()
   const { activeLocation } = useLocationStore()
@@ -42,6 +26,24 @@ export default function MenuPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const { addItem, getTotalItems, clearIfDifferentLocation } = useCartStore()
   const totalItems = getTotalItems()
+  const t = useT()
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    coffee: t('menu.category.coffee'),
+    cold: t('menu.category.cold'),
+    food: t('menu.category.food'),
+    sweets: t('menu.category.sweets'),
+    addons: t('menu.category.addons'),
+    beans: t('menu.category.beans'),
+    merch: t('menu.category.merch'),
+    other: t('menu.category.other'),
+  }
+
+  const LOCATION_FORMAT_LABELS: Record<string, string> = {
+    SELF_SERVICE: t('header.selfService'),
+    TO_GO: t('header.toGo'),
+    FAMILY_CAFE: t('header.familyCafe'),
+  }
 
   const menuQuery = useQuery({
     queryKey: ['menu', activeLocation?.slug, search],
@@ -59,7 +61,7 @@ export default function MenuPage() {
     return categories.filter((c) => c.category === selectedCategory)
   }, [categories, selectedCategory])
 
-  if (!activeLocation) return <div className="p-4 text-gray-500">Оберіть точку у хедері, щоб переглянути меню.</div>
+  if (!activeLocation) return <div className="p-4 text-gray-500">{t('menu.selectLocation')}</div>
 
   if (menuQuery.isLoading) {
     return <div className="p-4 space-y-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-24 rounded-2xl" />)}</div>
@@ -68,8 +70,8 @@ export default function MenuPage() {
   if (menuQuery.isError) {
     return (
       <div className="p-4">
-        <div className="text-red-600 mb-3">Не вдалося завантажити меню.</div>
-        <button className="px-4 py-2 rounded-xl bg-coffee-600 text-white" onClick={() => menuQuery.refetch()}>Спробувати знову</button>
+        <div className="text-red-600 mb-3">{t('common.loadFailed')}</div>
+        <button className="px-4 py-2 rounded-xl bg-coffee-600 text-white" onClick={() => menuQuery.refetch()}>{t('common.retry')}</button>
       </div>
     )
   }
@@ -78,20 +80,20 @@ export default function MenuPage() {
     <div className="p-4 space-y-4 pb-28">
       {activeLocation.format === 'SELF_SERVICE' && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 text-sm">
-          🏪 Точка самообслуговування. Меню можна переглядати в застосунку, але оформлення та оплата відбуваються тільки на місці.
+          {t('menu.selfServiceBanner')}
         </div>
       )}
 
       {activeLocation.allowOrders && activeLocation.paymentFlow === 'CASHIER_ONLY' && (
         <div className="bg-coffee-100 border border-coffee-200 text-coffee-900 rounded-2xl p-3 text-sm">
-          Передзамовлення для формату {LOCATION_FORMAT_LABELS[activeLocation.format || 'TO_GO'] || 'to go'}: замовлення створюється в системі точки, а оплата проходить тільки на касі у бариста.
+          {t('menu.preorderFormat')} {LOCATION_FORMAT_LABELS[activeLocation.format || 'TO_GO'] || 'to go'}: {t('menu.preorderBanner')}
         </div>
       )}
 
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Пошук по меню..." className="w-full border border-gray-200 rounded-xl px-3 py-2" />
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('menu.searchPlaceholder')} className="w-full border border-gray-200 rounded-xl px-3 py-2" />
 
       <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-        <button onClick={() => setSelectedCategory('all')} className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap border ${selectedCategory === 'all' ? 'bg-coffee-600 text-white border-coffee-600' : 'bg-white border-gray-200 text-gray-700'}`}>Усі</button>
+        <button onClick={() => setSelectedCategory('all')} className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap border ${selectedCategory === 'all' ? 'bg-coffee-600 text-white border-coffee-600' : 'bg-white border-gray-200 text-gray-700'}`}>{t('menu.all')}</button>
         {categoryTabs.map((cat) => (
           <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap border ${selectedCategory === cat ? 'bg-coffee-600 text-white border-coffee-600' : 'bg-white border-gray-200 text-gray-700'}`}>
             {CATEGORY_LABELS[cat] || cat}
@@ -110,7 +112,7 @@ export default function MenuPage() {
                   {p.description && <div className="text-sm text-gray-500 mt-1">{p.description}</div>}
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-coffee-700 whitespace-nowrap">{Number(p.price).toFixed(0)} грн</div>
+                  <div className="font-bold text-coffee-700 whitespace-nowrap">{Number(p.price).toFixed(0)} {t('common.currency')}</div>
                   {activeLocation.allowOrders && (
                     <button
                       onClick={() => {
@@ -119,7 +121,7 @@ export default function MenuPage() {
                       }}
                       className="mt-2 px-3 py-1.5 rounded-lg bg-coffee-600 text-white text-sm"
                     >
-                      Додати
+                      {t('menu.add')}
                     </button>
                   )}
                 </div>
@@ -131,7 +133,7 @@ export default function MenuPage() {
 
       {activeLocation.allowOrders && totalItems > 0 && (
         <button onClick={() => navigate('/cart')} className="fixed left-3 right-3 bottom-20 z-40 px-4 py-3 rounded-2xl bg-coffee-700 text-white shadow-xl">
-          Перейти в кошик ({totalItems})
+          {t('menu.goToCart')} ({totalItems})
         </button>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
+import { useT } from '../lib/i18n'
 
 const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'PerkUpCoffeeBot'
 
@@ -15,6 +16,7 @@ export default function LoginPage() {
   const widgetRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const t = useT()
 
   useEffect(() => {
     // Telegram Login Widget callback
@@ -28,7 +30,7 @@ export default function LoginPage() {
         useAuthStore.setState({ token, user, isAuthenticated: true, isLoading: false })
         window.__hideSplash?.()
       } catch (e: any) {
-        setError(e.response?.data?.error || 'Помилка авторизації')
+        setError(e.response?.data?.error || t('login.error'))
       }
       setLoading(false)
     }
@@ -58,7 +60,7 @@ export default function LoginPage() {
         <div className="space-y-2">
           <div className="text-5xl">☕</div>
           <h1 className="text-2xl font-bold text-coffee-700">PerkUp</h1>
-          <p className="text-sm text-gray-500">Кав'ярня з бонусами та грою</p>
+          <p className="text-sm text-gray-500">{t('login.tagline')}</p>
         </div>
 
         {/* Divider */}
@@ -66,9 +68,9 @@ export default function LoginPage() {
 
         {/* Description */}
         <div className="space-y-2">
-          <p className="text-gray-700 font-medium">Увійти через Telegram</p>
+          <p className="text-gray-700 font-medium">{t('login.telegram')}</p>
           <p className="text-xs text-gray-400">
-            Авторизуйся, щоб переглядати меню, робити замовлення та отримувати бонуси
+            {t('login.authDesc')}
           </p>
         </div>
 
@@ -76,7 +78,7 @@ export default function LoginPage() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-3">
             <div className="w-5 h-5 border-2 border-coffee-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-gray-500">Входимо...</span>
+            <span className="text-sm text-gray-500">{t('login.loggingIn')}</span>
           </div>
         ) : (
           <div ref={widgetRef} className="flex justify-center" />
@@ -88,7 +90,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-[10px] text-gray-300">
-          Натискаючи кнопку, ви погоджуєтесь з умовами використання
+          {t('login.terms')}
         </p>
       </div>
     </div>
