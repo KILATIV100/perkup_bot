@@ -306,7 +306,6 @@ export default function AiPage() {
               <div className="text-center text-sm text-violet-600 font-semibold bg-violet-100 rounded-xl py-2.5">
                 ✅ {t('ai.challengeDone')} +{challenge.points} {t('profile.points')}
               </div>
-              </div>
             ) : (
               <button
                 onClick={handleClaim}
