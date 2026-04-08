@@ -33,6 +33,11 @@ export const authApi = {
   getMe: () => api.get('/api/auth/me'),
   completeOnboarding: (data: { preferredLocationId?: number; birthDate?: string; language?: string }) =>
     api.patch('/api/auth/onboarding', data),
+  updateSettings: (data: { language?: string; notifSpin?: boolean; notifWinback?: boolean; notifMorning?: boolean; notifPromo?: boolean }) =>
+    api.patch('/api/auth/settings', data),
+  testReset: () => api.post('/api/auth/test-reset'),
+  testAddOrders: (count: number, locationSlug?: string) => api.post('/api/auth/test-add-orders', { count, locationSlug }),
+  testSetPoints: (points: number) => api.post('/api/auth/test-set-points', { points }),
 }
 
 export const locationsApi = {
@@ -87,4 +92,19 @@ export const radioApi = {
   addTrack: (data: { fileId: string; title: string; url: string; artist?: string; duration?: number; genre?: string }) =>
     api.post('/api/radio/add-track', data),
   setGenre: (genre: string) => api.post('/api/radio/user-genre', { genre }),
+}
+
+export const adminApi = {
+  getDashboard: () => api.get('/api/admin/dashboard'),
+  getUsers: (params?: { page?: number; role?: string; search?: string }) => api.get('/api/admin/users', { params }),
+  setUserRole: (id: number, role: string) => api.patch(`/api/admin/users/${id}/role`, { role }),
+  getOrders: (params?: { page?: number; status?: string; locationId?: number }) => api.get('/api/admin/orders', { params }),
+  getLocations: () => api.get('/api/admin/locations'),
+  updateLocation: (id: number, data: any) => api.patch(`/api/admin/locations/${id}`, data),
+  getMenu: (locationSlug: string) => api.get(`/api/admin/menu/${locationSlug}`),
+  reorderCategories: (locationSlug: string, categories: string[]) => api.post(`/api/admin/menu/${locationSlug}/reorder-categories`, { categories }),
+  reorderProducts: (locationSlug: string, productIds: number[]) => api.post(`/api/admin/menu/${locationSlug}/reorder-products`, { productIds }),
+  updateProduct: (id: number, data: any) => api.patch(`/api/admin/products/${id}`, data),
+  syncAll: () => api.post('/api/admin/sync'),
+  syncLocation: (slug: string) => api.post(`/api/admin/sync/${slug}`),
 }

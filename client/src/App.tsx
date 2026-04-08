@@ -10,6 +10,8 @@ import FunPage from './pages/FunPage'
 import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
+import SettingsPage from './pages/SettingsPage'
+import AdminPage from './pages/AdminPage'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
@@ -38,6 +40,8 @@ export default function App() {
           <Route path="/ai" element={<AiPage />} />
           <Route path="/bonuses" element={<BonusesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/orders/:id" element={<OrderStatusPage />} />

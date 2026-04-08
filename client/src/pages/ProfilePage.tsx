@@ -1,6 +1,9 @@
+import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
+import TestPanel from '../components/TestPanel'
 
 export default function ProfilePage() {
+  const navigate = useNavigate()
   const { user, logout } = useAuthStore()
 
   return (
@@ -20,11 +23,19 @@ export default function ProfilePage() {
           <span className="text-gray-700">📜 Історія замовлень</span>
           <span className="text-gray-300">›</span>
         </button>
-        <button className="w-full text-left px-4 py-3 flex justify-between items-center">
+        <button onClick={() => navigate('/settings')} className="w-full text-left px-4 py-3 flex justify-between items-center">
           <span className="text-gray-700">⚙️ Налаштування</span>
           <span className="text-gray-300">›</span>
         </button>
+        {(user?.role === 'ADMIN' || user?.role === 'OWNER') && (
+          <button onClick={() => navigate('/admin')} className="w-full text-left px-4 py-3 border-t border-gray-50 flex justify-between items-center">
+            <span className="text-gray-700">🛡️ Адмін панель</span>
+            <span className="text-gray-300">›</span>
+          </button>
+        )}
       </div>
+
+      <TestPanel />
 
       <button onClick={logout} className="w-full py-3 text-red-500 font-semibold bg-red-50 rounded-xl mt-4 active:scale-95 transition-transform">
         Вийти з акаунта

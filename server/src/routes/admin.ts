@@ -1,15 +1,261 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { prisma } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { syncAllLocations, syncPosterMenu } from '../services/poster'
 
 export default async function adminRoutes(app: FastifyInstance) {
 
-  app.post('/sync', async (_req: any, reply: any) => {
+  // ─── Auth guard: ADMIN or OWNER ──────────────────────────────
+  const adminOnly = async (req: any, reply: any) => {
+    try { await req.jwtVerify() } catch {
+      return reply.status(401).send({ success: false, error: 'Unauthorized' })
+    }
+    if (!['ADMIN', 'OWNER'].includes(req.user.role)) {
+      return reply.status(403).send({ success: false, error: 'Admin only' })
+    }
+  }
+
+  // ─── DASHBOARD ────────────────────────────────────────────────
+  app.get('/dashboard', { preHandler: adminOnly }, async (_req: any, reply: any) => {
+    const [usersCount, ordersToday, ordersTotal, revenue, locationsCount] = await Promise.all([
+      prisma.user.count(),
+      prisma.order.count({
+        where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }, status: { not: 'CANCELLED' } },
+      }),
+      prisma.order.count({ where: { status: 'COMPLETED' } }),
+      prisma.order.aggregate({ where: { status: 'COMPLETED' }, _sum: { total: true } }),
+      prisma.location.count({ where: { isActive: true } }),
+    ])
+
+    return reply.send({
+      success: true,
+      stats: {
+        usersCount,
+        ordersToday,
+        ordersTotal,
+        revenue: Number(revenue._sum.total || 0),
+        locationsCount,
+      },
+    })
+  })
+
+  // ─── USERS ────────────────────────────────────────────────────
+  app.get('/users', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      role: z.string().optional(),
+      search: z.string().optional(),
+    }).safeParse(req.query)
+    const page = query.success ? query.data.page : 1
+    const take = 20
+    const skip = (page - 1) * take
+
+    const where: any = {}
+    if (query.success && query.data.role) where.role = query.data.role
+    if (query.success && query.data.search) {
+      where.OR = [
+        { firstName: { contains: query.data.search, mode: 'insensitive' } },
+        { username: { contains: query.data.search, mode: 'insensitive' } },
+      ]
+    }
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: { id: true, telegramId: true, firstName: true, lastName: true, username: true, role: true, points: true, level: true, monthlyOrders: true, onboardingDone: true, lastActivity: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.user.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      users: users.map(u => ({ ...u, telegramId: u.telegramId.toString() })),
+      total,
+      pages: Math.ceil(total / take),
+    })
+  })
+
+  app.patch('/users/:id/role', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    // Only OWNER can change roles
+    if (req.user.role !== 'OWNER') {
+      return reply.status(403).send({ success: false, error: 'Only owner can change roles' })
+    }
+    const id = Number(req.params.id)
+    const body = z.object({ role: z.enum(['USER', 'BARISTA', 'ADMIN', 'OWNER']) }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid role' })
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { role: body.data.role },
+      select: { id: true, firstName: true, role: true },
+    })
+    return reply.send({ success: true, user })
+  })
+
+  // ─── ORDERS ───────────────────────────────────────────────────
+  app.get('/orders', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      status: z.string().optional(),
+      locationId: z.coerce.number().optional(),
+    }).safeParse(req.query)
+    const page = query.success ? query.data.page : 1
+    const take = 20
+    const skip = (page - 1) * take
+
+    const where: any = {}
+    if (query.success && query.data.status) where.status = query.data.status
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        include: {
+          user: { select: { firstName: true, username: true } },
+          location: { select: { name: true, slug: true } },
+          items: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.order.count({ where }),
+    ])
+
+    return reply.send({ success: true, orders, total, pages: Math.ceil(total / take) })
+  })
+
+  // ─── LOCATIONS ────────────────────────────────────────────────
+  app.get('/locations', { preHandler: adminOnly }, async (_req: any, reply: any) => {
+    const locations = await prisma.location.findMany({
+      include: { workingHours: true, _count: { select: { products: true, orders: true } } },
+      orderBy: { id: 'asc' },
+    })
+    return reply.send({ success: true, locations })
+  })
+
+  app.patch('/locations/:id', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const id = Number(req.params.id)
+    const body = z.object({
+      allowOrders: z.boolean().optional(),
+      busyMode: z.boolean().optional(),
+      maxQueueSize: z.number().int().min(1).max(100).optional(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
+
+    const location = await prisma.location.update({ where: { id }, data: body.data })
+    return reply.send({ success: true, location })
+  })
+
+  // ─── MENU: Categories & Products sorting ──────────────────────
+  app.get('/menu/:locationSlug', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const slug = req.params.locationSlug
+    const location = await prisma.location.findUnique({ where: { slug } })
+    if (!location) return reply.status(404).send({ success: false, error: 'Location not found' })
+
+    const products = await prisma.product.findMany({
+      where: { locationId: location.id },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    })
+
+    // Build category list with order
+    const catMap = new Map<string, { sortOrder: number; count: number }>()
+    for (const p of products) {
+      const existing = catMap.get(p.category)
+      if (!existing) {
+        catMap.set(p.category, { sortOrder: p.sortOrder, count: 1 })
+      } else {
+        existing.count++
+      }
+    }
+    const categories = Array.from(catMap.entries())
+      .map(([name, data]) => ({ name, sortOrder: data.sortOrder, count: data.count }))
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+
+    return reply.send({ success: true, locationId: location.id, categories, products })
+  })
+
+  // Reorder categories
+  app.post('/menu/:locationSlug/reorder-categories', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const slug = req.params.locationSlug
+    const body = z.object({
+      categories: z.array(z.string()).min(1),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
+
+    const location = await prisma.location.findUnique({ where: { slug } })
+    if (!location) return reply.status(404).send({ success: false, error: 'Location not found' })
+
+    // Set sortOrder for each product based on category position
+    const cats = body.data.categories
+    for (let i = 0; i < cats.length; i++) {
+      await prisma.product.updateMany({
+        where: { locationId: location.id, category: cats[i] },
+        data: { sortOrder: (i + 1) * 100 },
+      })
+    }
+
+    // Clear menu cache
+    await redis.del('menu:' + slug)
+
+    return reply.send({ success: true })
+  })
+
+  // Reorder products within a category
+  app.post('/menu/:locationSlug/reorder-products', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const slug = req.params.locationSlug
+    const body = z.object({
+      productIds: z.array(z.number().int().positive()).min(1),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
+
+    const location = await prisma.location.findUnique({ where: { slug } })
+    if (!location) return reply.status(404).send({ success: false, error: 'Location not found' })
+
+    // Update sortOrder for each product
+    for (let i = 0; i < body.data.productIds.length; i++) {
+      await prisma.product.updateMany({
+        where: { id: body.data.productIds[i], locationId: location.id },
+        data: { sortOrder: i + 1 },
+      })
+    }
+
+    await redis.del('menu:' + slug)
+    return reply.send({ success: true })
+  })
+
+  // Toggle product availability
+  app.patch('/products/:id', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const id = Number(req.params.id)
+    const body = z.object({
+      isAvailable: z.boolean().optional(),
+      price: z.number().positive().optional(),
+      name: z.string().min(1).max(200).optional(),
+      description: z.string().max(500).optional(),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
+
+    const product = await prisma.product.update({ where: { id }, data: body.data })
+
+    // Clear cache for this location
+    const loc = await prisma.location.findUnique({ where: { id: product.locationId } })
+    if (loc) await redis.del('menu:' + loc.slug)
+
+    return reply.send({ success: true, product })
+  })
+
+  // ─── SYNC (existing) ─────────────────────────────────────────
+  app.post('/sync', { preHandler: adminOnly }, async (_req: any, reply: any) => {
     syncAllLocations().catch(e => console.error('[Admin sync error]', e))
     return reply.send({ success: true, message: 'Sync started' })
   })
 
-  app.post('/sync/:slug', async (req: any, reply: any) => {
+  app.post('/sync/:slug', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const slug = (req.params as any).slug
     try {
       const result = await syncPosterMenu(slug)
@@ -19,7 +265,8 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/db-push', async (_req: any, reply: any) => {
+  // ─── DB helpers (existing, now protected) ─────────────────────
+  app.post('/db-push', { preHandler: adminOnly }, async (_req: any, reply: any) => {
     const results: string[] = []
     const run = async (sql: string, label: string) => {
       try {
@@ -66,60 +313,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, results })
   })
 
-  app.post('/fix-locations', async (_req: any, reply: any) => {
-    const results: string[] = []
-    try {
-      await prisma.location.update({ where: { slug: 'krona' }, data: { lat: 50.51723, lng: 30.77948, address: 'Chornovola 8V, Brovary' } })
-      results.push('krona OK')
-      await prisma.location.update({ where: { slug: 'pryozerny' }, data: { lat: 50.50131, lng: 30.75401, address: 'Fialkovska 27A, Brovary' } })
-      results.push('pryozerny OK')
-      await prisma.location.update({ where: { slug: 'mark-mall' }, data: { lat: 50.51482, lng: 30.78220, address: 'Kyivska 239, Brovary' } })
-      results.push('mark-mall OK')
-      return reply.send({ success: true, results })
-    } catch (e: any) {
-      return reply.status(500).send({ success: false, error: e.message })
-    }
-  })
-
-  app.post('/create-tables', async (_req: any, reply: any) => {
-    const results: string[] = []
-    try {
-      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "SpinResult" ("id" SERIAL PRIMARY KEY, "userId" INTEGER NOT NULL, "prizeId" TEXT NOT NULL, "prizeLabel" TEXT NOT NULL, "createdAt" TIMESTAMP NOT NULL DEFAULT NOW())`)
-      results.push('SpinResult: OK')
-      await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "SpinResult_userId_idx" ON "SpinResult"("userId")')
-      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "PrizeVoucher" ("id" SERIAL PRIMARY KEY, "userId" INTEGER NOT NULL, "code" TEXT NOT NULL UNIQUE, "prizeId" TEXT NOT NULL, "prizeLabel" TEXT NOT NULL, "prizeType" TEXT NOT NULL, "prizeValue" INTEGER NOT NULL DEFAULT 0, "isUsed" BOOLEAN NOT NULL DEFAULT FALSE, "usedAt" TIMESTAMP, "expiresAt" TIMESTAMP NOT NULL, "createdAt" TIMESTAMP NOT NULL DEFAULT NOW())`)
-      results.push('PrizeVoucher: OK')
-      return reply.send({ success: true, results })
-    } catch (e: any) {
-      return reply.status(500).send({ success: false, error: e.message, results })
-    }
-  })
-
-  app.post('/fix-db', async (_req: any, reply: any) => {
-    const results: string[] = []
-    try {
-      for (const name of ['Product_posterProductId_key', 'product_posterproductid_key']) {
-        try {
-          await prisma.$executeRawUnsafe('ALTER TABLE "Product" DROP CONSTRAINT IF EXISTS "' + name + '"')
-          results.push('DROP: ' + name)
-        } catch (_e) { results.push('SKIP: ' + name) }
-      }
-      try {
-        await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "Product_posterProductId_key"')
-        results.push('Index DROP: OK')
-      } catch (_e) { results.push('Index DROP: SKIP') }
-      const loc = await prisma.location.findUnique({ where: { slug: 'pryozerny' } })
-      if (loc) {
-        const deleted = await prisma.product.deleteMany({ where: { locationId: loc.id } })
-        results.push('Deleted ' + deleted.count + ' pryozerny products')
-      }
-      return reply.send({ success: true, results })
-    } catch (e: any) {
-      return reply.status(500).send({ success: false, error: e.message, results })
-    }
-  })
-
-  app.get('/db-check', async (_req: any, reply: any) => {
+  app.get('/db-check', { preHandler: adminOnly }, async (_req: any, reply: any) => {
     const krona = await prisma.location.findUnique({ where: { slug: 'krona' } })
     const pryozerny = await prisma.location.findUnique({ where: { slug: 'pryozerny' } })
     const kronaCount = krona ? await prisma.product.count({ where: { locationId: krona.id } }) : 0
