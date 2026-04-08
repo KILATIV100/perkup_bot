@@ -1,10 +1,6 @@
 node_modules/
 **/node_modules/
-.dist/
-dist/
-!CPanel/dist/
-.env
-.env.*
+
 !.env.example
 coverage/
 *.log
