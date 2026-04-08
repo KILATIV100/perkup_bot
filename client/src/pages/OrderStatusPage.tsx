@@ -4,6 +4,7 @@ import { ordersApi } from '../lib/api'
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: '⏳ Очікує',
+  SENT_TO_POS: '📨 Передано в Poster',
   ACCEPTED: '✅ Прийнято',
   PREPARING: '👨‍🍳 Готується',
   READY: '☕ Готово',
@@ -37,6 +38,7 @@ export default function OrderStatusPage() {
       <div className="bg-white rounded-2xl border border-gray-100 p-4">
         <div className="text-sm text-gray-500 mb-1">Статус</div>
         <div className="text-xl font-semibold">{STATUS_LABEL[order.status] || order.status}</div>
+        {order.posterOrderId && <div className="text-xs text-gray-400 mt-2">Poster ID: {order.posterOrderId}</div>}
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 p-4">

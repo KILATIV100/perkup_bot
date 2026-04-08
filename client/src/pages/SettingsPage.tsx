@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const { user, updateUser } = useAuthStore()
 
   const [language, setLanguage] = useState<'uk' | 'en'>((user?.language as 'uk' | 'en') || 'uk')
+  const [phone, setPhone] = useState(user?.phone || '')
   const [notifSpin, setNotifSpin] = useState(true)
   const [notifMorning, setNotifMorning] = useState(true)
   const [notifPromo, setNotifPromo] = useState(true)
@@ -33,6 +34,17 @@ export default function SettingsPage() {
     } catch {
       setter(!value)
     }
+  }
+
+  const handlePhoneSave = async () => {
+    setSaving(true)
+    try {
+      await authApi.updateSettings({ phone: phone || '' })
+      updateUser({ phone: phone || null })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {}
+    setSaving(false)
   }
 
   return (
@@ -116,8 +128,19 @@ export default function SettingsPage() {
           <h2 className="font-semibold text-gray-800">{language === 'uk' ? 'Акаунт' : 'Account'}</h2>
         </div>
 
+        <div className="space-y-2 pb-2 border-b border-gray-100 mb-2">
+          <label className="text-sm text-gray-500">{language === 'uk' ? 'Телефон для передзамовлень' : 'Phone for preorders'}</label>
+          <div className="flex gap-2">
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" placeholder="+380501234567" inputMode="tel" />
+            <button onClick={handlePhoneSave} disabled={saving} className="px-4 py-2 rounded-xl bg-coffee-600 text-white text-sm disabled:opacity-60">
+              {language === 'uk' ? 'Зберегти' : 'Save'}
+            </button>
+          </div>
+        </div>
+
         <InfoRow label={language === 'uk' ? 'Ім\'я' : 'Name'} value={user?.firstName || '—'} />
         {user?.username && <InfoRow label="Username" value={`@${user.username}`} />}
+        <InfoRow label={language === 'uk' ? 'Телефон' : 'Phone'} value={user?.phone || '—'} />
         <InfoRow label={language === 'uk' ? 'Рівень' : 'Level'} value={user?.level || 'BRONZE'} />
         <InfoRow label={language === 'uk' ? 'Бали' : 'Points'} value={String(user?.points || 0)} />
       </div>

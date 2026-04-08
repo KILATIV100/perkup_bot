@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import crypto from 'crypto'
 import { prisma } from '../../lib/prisma'
+import { awardCompletedOrderLoyalty } from '../../lib/orderRewards'
 
 export default async function posterWebhookRoutes(app: FastifyInstance) {
   app.post('/:locationId', async (req, reply) => {
@@ -33,6 +34,7 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
 
       const order = await prisma.order.findFirst({
         where: { posterOrderId, locationId: location.id },
+        include: { user: { select: { points: true } } },
       })
 
       if (order && order.status !== 'COMPLETED') {
@@ -42,24 +44,12 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
             data: { status: 'COMPLETED' },
           })
 
-          const pointsEarned = Math.floor(Number(order.total) / 10)
-          if (pointsEarned > 0) {
-            await tx.user.update({
-              where: { id: order.userId },
-              data: { points: { increment: pointsEarned } },
-            })
-            await tx.pointsTransaction.upsert({
-              where: { idempotencyKey: `order-completed-points-${order.id}` },
-              update: {},
-              create: {
-                userId: order.userId,
-                amount: pointsEarned,
-                type: 'ORDER',
-                description: `Бали за замовлення #${order.id}`,
-                idempotencyKey: `order-completed-points-${order.id}`,
-              },
-            })
-          }
+          await awardCompletedOrderLoyalty(tx, {
+            orderId: order.id,
+            userId: order.userId,
+            total: Number(order.total),
+            userPoints: order.user.points,
+          })
         })
       }
     }

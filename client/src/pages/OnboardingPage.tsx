@@ -5,14 +5,15 @@ import { useAuthStore } from '../stores/auth'
 export default function OnboardingPage() {
   const { updateUser } = useAuthStore()
   const [language, setLanguage] = useState<'uk' | 'en'>('uk')
+  const [phone, setPhone] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
     setSaving(true)
     try {
-      await authApi.completeOnboarding({ language, birthDate: birthDate || undefined })
-      updateUser({ onboardingDone: true, language })
+      await authApi.completeOnboarding({ language, phone: phone || undefined, birthDate: birthDate || undefined })
+      updateUser({ onboardingDone: true, language, phone: phone || null })
     } finally {
       setSaving(false)
     }
@@ -30,6 +31,11 @@ export default function OnboardingPage() {
             <button onClick={() => setLanguage('uk')} className={`px-3 py-2 rounded-xl border ${language === 'uk' ? 'bg-coffee-600 text-white' : 'bg-white'}`}>🇺🇦 УКР</button>
             <button onClick={() => setLanguage('en')} className={`px-3 py-2 rounded-xl border ${language === 'en' ? 'bg-coffee-600 text-white' : 'bg-white'}`}>🇬🇧 ENG</button>
           </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">Телефон (рекомендовано для передзамовлення)</label>
+          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-2" placeholder="+380501234567" />
         </div>
 
         <div>

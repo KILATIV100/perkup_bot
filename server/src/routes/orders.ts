@@ -3,6 +3,10 @@ import { z } from 'zod'
 import crypto from 'crypto'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
+import { getLocationProfile } from '../lib/locationProfile'
+import { normalizePhone } from '../lib/phone'
+import { awardCompletedOrderLoyalty } from '../lib/orderRewards'
+import { createPosterIncomingOrder } from '../services/poster'
 
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID || '7363233852'
 const BOT = process.env.BOT_TOKEN || ''
@@ -16,19 +20,6 @@ async function tgSend(chatId: string, text: string) {
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
     })
   } catch (e) { console.error('tgSend error:', e) }
-}
-
-function getLevelMultiplier(points: number): number {
-  if (points >= 3000) return 1.3
-  if (points >= 1000) return 1.2
-  if (points >= 300) return 1.1
-  return 1.0
-}
-
-function calcEarnedPoints(total: number, userPoints: number): number {
-  const base = Math.floor(total / 5)
-  const multiplier = getLevelMultiplier(userPoints)
-  return Math.round(base * multiplier)
 }
 
 function locationIsOpen(hours: any[]): boolean {
@@ -58,7 +49,7 @@ export default async function orderRoutes(app: FastifyInstance) {
         quantity: z.number().min(1).max(20),
         modifiers: z.record(z.string()).optional(),
       })).min(1),
-      paymentMethod: z.enum(['cash', 'card']).default('cash'),
+      customerPhone: z.string().min(10).max(20).optional(),
       comment: z.string().max(300).optional(),
       pointsUsed: z.number().min(0).default(0),
     })
@@ -66,23 +57,51 @@ export default async function orderRoutes(app: FastifyInstance) {
     const result = schema.safeParse(req.body)
     if (!result.success) return reply.status(400).send({ success: false, error: 'Invalid request' })
 
-    const { locationId, items, paymentMethod, comment, pointsUsed } = result.data
+    const { locationId, items, customerPhone, comment, pointsUsed } = result.data
 
     const location = await prisma.location.findUnique({
       where: { id: locationId, isActive: true },
       include: { workingHours: true },
     })
     if (!location) return reply.status(404).send({ success: false, error: 'Location not found' })
-    if (!location.allowOrders) return reply.status(400).send({ success: false, error: 'Orders not allowed here' })
+    const locationProfile = getLocationProfile(location)
+    if (!locationProfile.remoteOrderingEnabled) {
+      return reply.status(400).send({
+        success: false,
+        error: locationProfile.format === 'SELF_SERVICE'
+          ? 'This location accepts orders only on-site'
+          : 'Orders are not available for this location right now',
+      })
+    }
     if (!locationIsOpen((location as any).workingHours || [])) {
       return reply.status(400).send({ success: false, error: 'Closed now' })
     }
 
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    const activeShift = await prisma.shift.findFirst({
+      where: { locationId, endedAt: null },
+      orderBy: { startedAt: 'desc' },
+    })
+
+    const user: any = await prisma.user.findUnique({ where: { id: req.user.id } })
     if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+
+    let normalizedPhone: string | null = null
+    if (location.hasPoster) {
+      const requestedPhone = customerPhone || user.phone
+      if (!requestedPhone) {
+        return reply.status(400).send({ success: false, error: 'Phone number is required for Poster preorder' })
+      }
+      try {
+        normalizedPhone = normalizePhone(requestedPhone)
+      } catch (error) {
+        return reply.status(400).send({ success: false, error: (error as Error).message })
+      }
+    }
 
     let total = 0
     const orderItems: any[] = []
+    const posterProducts: Array<{ product_id: number; count: number }> = []
+    const modifierComments: string[] = []
 
     for (const item of items) {
       if (item.productId) {
@@ -93,7 +112,20 @@ export default async function orderRoutes(app: FastifyInstance) {
         const price = Number(p.price)
         total += price * item.quantity
         orderItems.push({ productId: p.id, name: p.name, price, quantity: item.quantity, modifiers: item.modifiers || null })
+        if (location.hasPoster) {
+          if (!p.posterProductId || Number.isNaN(Number(p.posterProductId))) {
+            return reply.status(400).send({ success: false, error: `Product ${p.name} is not linked to Poster` })
+          }
+          posterProducts.push({ product_id: Number(p.posterProductId), count: item.quantity })
+          if (item.modifiers && Object.keys(item.modifiers).length > 0) {
+            const mods = Object.entries(item.modifiers).map(([key, value]) => `${key}: ${value}`).join(', ')
+            modifierComments.push(`${p.name} — ${mods}`)
+          }
+        }
       } else if (item.bundleId) {
+        if (location.hasPoster) {
+          return reply.status(400).send({ success: false, error: 'Bundles are not supported for Poster preorder yet' })
+        }
         const b = await prisma.bundle.findUnique({ where: { id: item.bundleId } })
         if (!b || !b.isAvailable || b.locationId !== locationId) {
           return reply.status(400).send({ success: false, error: 'Bundle unavailable' })
@@ -106,6 +138,9 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     let discount = 0
     if (pointsUsed > 0) {
+      if (location.hasPoster) {
+        return reply.status(400).send({ success: false, error: 'Bonus redemption is not available for Poster preorders yet. Bonuses will be credited after payment at the cashier.' })
+      }
       if (user.points < pointsUsed) return reply.status(400).send({ success: false, error: 'Not enough points' })
       const maxDiscount = Math.floor(total * 0.2)
       discount = Math.min(pointsUsed, maxDiscount)
@@ -118,10 +153,11 @@ export default async function orderRoutes(app: FastifyInstance) {
       data: {
         userId: user.id,
         locationId,
-        status: 'PENDING',
+        shiftId: activeShift?.id,
+        status: activeShift ? 'PENDING' : 'UNASSIGNED',
         total: finalTotal,
         discount,
-        paymentMethod,
+        paymentMethod: 'cashier',
         comment: comment || null,
         pointsUsed,
         qrCode,
@@ -129,6 +165,9 @@ export default async function orderRoutes(app: FastifyInstance) {
       },
       include: { items: true },
     })
+
+    let finalStatus = order.status
+    let posterOrderId: string | null = null
 
     if (pointsUsed > 0) {
       await prisma.user.update({ where: { id: user.id }, data: { points: { decrement: discount } } })
@@ -139,6 +178,50 @@ export default async function orderRoutes(app: FastifyInstance) {
       }})
     }
 
+    if (location.hasPoster) {
+      try {
+        const posterComment = [
+          `PerkUp order #${order.id}`,
+          `QR: ${qrCode}`,
+          comment || '',
+          modifierComments.length > 0 ? `Modifiers: ${modifierComments.join(' | ')}` : '',
+        ].filter(Boolean).join('\n')
+
+        const posterOrder = await createPosterIncomingOrder({
+          location: {
+            id: location.id,
+            name: location.name,
+            slug: location.slug,
+            posterToken: location.posterToken,
+            posterSpotId: location.posterSpotId,
+            hasPoster: location.hasPoster,
+          },
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: normalizedPhone!,
+          comment: posterComment,
+          products: posterProducts,
+        })
+
+        posterOrderId = posterOrder.incomingOrderId
+        finalStatus = 'SENT_TO_POS'
+
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { posterOrderId, status: finalStatus },
+        })
+      } catch (error) {
+        if (pointsUsed > 0) {
+          await prisma.user.update({ where: { id: user.id }, data: { points: { increment: discount } } })
+          await prisma.pointsTransaction.deleteMany({ where: { idempotencyKey: 'redeem-order-' + order.id } })
+        }
+        await prisma.orderItem.deleteMany({ where: { orderId: order.id } })
+        await prisma.order.delete({ where: { id: order.id } })
+        await tgSend(OWNER_ID, `Poster sync failed for order #${order.id} at ${location.name}: ${(error as Error).message}`)
+        return reply.status(502).send({ success: false, error: `Failed to send order to Poster: ${(error as Error).message}` })
+      }
+    }
+
     await redis.del('menu:' + location.slug)
 
     const itemLines = orderItems.map((i: any) => '- ' + i.name + ' x' + i.quantity + ' = ' + (i.price * i.quantity) + ' uah').join('\n')
@@ -146,7 +229,9 @@ export default async function orderRoutes(app: FastifyInstance) {
       'New order #' + order.id, location.name, itemLines,
       discount > 0 ? 'Discount: -' + discount + ' uah' : '',
       'Total: ' + finalTotal + ' uah',
-      paymentMethod === 'cash' ? 'Cash' : 'Card',
+      'Payment: at cashier / POS',
+      posterOrderId ? 'Poster incoming order: ' + posterOrderId : '',
+      activeShift ? 'Shift: #' + activeShift.id : 'Shift: missing, requires assignment',
       comment ? 'Note: ' + comment : '',
       'QR: ' + qrCode,
     ].filter(Boolean).join('\n')
@@ -154,11 +239,31 @@ export default async function orderRoutes(app: FastifyInstance) {
     await tgSend(OWNER_ID, msg)
 
     if (user.telegramId) {
-      const userMsg = 'Order #' + order.id + ' accepted!\n\nQR Code:\n`' + qrCode + '`\n\nShow this to the barista\nTotal: ' + finalTotal + ' uah'
+      const userMsg = [
+        'Order #' + order.id + ' created!',
+        '',
+        'QR Code:',
+        '`' + qrCode + '`',
+        '',
+        posterOrderId ? 'The preorder has already been sent to the POS of this coffee shop.' : '',
+        activeShift
+          ? 'Payment is made at the cashier with the barista of this location.'
+          : 'The order was created, but there is no active shift at the location yet. We notified the admin.',
+        'Total: ' + finalTotal + ' uah',
+      ].join('\n')
       await tgSend(String(user.telegramId), userMsg)
     }
 
-    return reply.send({ success: true, orderId: order.id, qrCode, total: finalTotal, status: 'PENDING' })
+    return reply.send({
+      success: true,
+      orderId: order.id,
+      qrCode,
+      total: finalTotal,
+      status: finalStatus,
+      paymentFlow: locationProfile.paymentFlow,
+      posSystem: locationProfile.posSystem,
+      posterOrderId,
+    })
   })
 
   app.get('/', { preHandler: requireAuth }, async (req: any, reply: any) => {
@@ -185,10 +290,29 @@ export default async function orderRoutes(app: FastifyInstance) {
     const id = Number(req.params.id)
     const order = await prisma.order.findFirst({ where: { id, userId: req.user.id } })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
-    if (!['PENDING', 'PAYMENT_PENDING'].includes(order.status)) {
+    if (!['PENDING', 'PAYMENT_PENDING', 'UNASSIGNED'].includes(order.status)) {
       return reply.status(400).send({ success: false, error: 'Cannot cancel' })
     }
     await prisma.order.update({ where: { id }, data: { status: 'CANCELLED' } })
+
+    if (order.discount && Number(order.discount) > 0) {
+      const refundKey = 'cancel-refund-order-' + id
+      const exists = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: refundKey } })
+      if (!exists) {
+        await prisma.pointsTransaction.create({ data: {
+          userId: order.userId,
+          amount: Number(order.discount),
+          type: 'BONUS',
+          description: 'Refund for cancelled order #' + id,
+          idempotencyKey: refundKey,
+        }})
+        await prisma.user.update({
+          where: { id: order.userId },
+          data: { points: { increment: Number(order.discount) } },
+        })
+      }
+    }
+
     return reply.send({ success: true })
   })
 
@@ -211,22 +335,14 @@ export default async function orderRoutes(app: FastifyInstance) {
     await prisma.order.update({ where: { id }, data: { status: parsed.data.status } })
 
     if (parsed.data.status === 'COMPLETED') {
-      const pts = calcEarnedPoints(Number(order.total), order.user.points)
+      const pts = await prisma.$transaction((tx) => awardCompletedOrderLoyalty(tx, {
+        orderId: id,
+        userId: order.userId,
+        total: Number(order.total),
+        userPoints: order.user.points,
+      }))
       if (pts > 0) {
-        const key = 'order-complete-' + id
-        const exists = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: key } })
-        if (!exists) {
-          await prisma.pointsTransaction.create({ data: {
-            userId: order.userId, amount: pts, type: 'ORDER',
-            description: 'Points for order #' + id,
-            idempotencyKey: key,
-          }})
-          await prisma.user.update({
-            where: { id: order.userId },
-            data: { points: { increment: pts }, monthlyOrders: { increment: 1 } },
-          })
-          await tgSend(String(order.user.telegramId), 'You got ' + pts + ' points for order #' + id + '!')
-        }
+        await tgSend(String(order.user.telegramId), 'You got ' + pts + ' points for order #' + id + '!')
       }
     }
 

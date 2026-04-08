@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
+import { getLocationProfile } from '../lib/locationProfile'
 
 function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -51,6 +52,7 @@ export default async function locationRoutes(app: FastifyInstance) {
 
     const result = locations.map(loc => {
       const { isOpen, nextOpenTime } = isLocationOpen(loc.workingHours)
+      const profile = getLocationProfile(loc)
       let distanceMeters: number | null = null
 
       if (query.success && query.data.lat && query.data.lng) {
@@ -67,6 +69,11 @@ export default async function locationRoutes(app: FastifyInstance) {
         lat: loc.lat,
         lng: loc.lng,
         allowOrders: loc.allowOrders,
+        format: profile.format,
+        posSystem: profile.posSystem,
+        menuManagement: profile.menuManagement,
+        paymentFlow: profile.paymentFlow,
+        remoteOrderingEnabled: profile.remoteOrderingEnabled,
         googleMapsUrl: loc.googleMapsUrl,
         busyMode: loc.busyMode,
         busyModeUntil: loc.busyModeUntil,
@@ -106,6 +113,7 @@ export default async function locationRoutes(app: FastifyInstance) {
     }
 
     const { isOpen, nextOpenTime } = isLocationOpen(location.workingHours)
+    const profile = getLocationProfile(location)
 
     return reply.send({
       success: true,
@@ -113,6 +121,11 @@ export default async function locationRoutes(app: FastifyInstance) {
         ...location,
         posterToken: undefined, // never expose
         posterAccount: undefined,
+        format: profile.format,
+        posSystem: profile.posSystem,
+        menuManagement: profile.menuManagement,
+        paymentFlow: profile.paymentFlow,
+        remoteOrderingEnabled: profile.remoteOrderingEnabled,
         isOpen,
         nextOpenTime,
       },

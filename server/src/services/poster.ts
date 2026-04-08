@@ -1,16 +1,8 @@
+import axios from 'axios'
 import { prisma } from '../lib/prisma'
 import { redisCache } from '../lib/redis'
-
-const LOCATION_CONFIGS: Record<string, { subdomain: string; token: string }> = {
-  krona: {
-    subdomain: 'perkup2',
-    token: '400311:442859326f65b2aa1974a9ebd303b8a8',
-  },
-  pryozerny: {
-    subdomain: 'perkup',
-    token: '483421:44288031aab04be166b1455d61771e0f',
-  },
-}
+import { getLocationProfile } from '../lib/locationProfile'
+import { normalizePhone } from '../lib/phone'
 
 const CATEGORY_ID_MAP: Record<string, string> = {
   '1': 'coffee', '3': 'cold', '5': 'addons', '6': 'coffee',
@@ -37,12 +29,85 @@ function buildImageUrl(photo: any, subdomain: string): string | undefined {
   return 'https://' + subdomain + '.joinposter.com' + p
 }
 
-export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
-  const cfg = LOCATION_CONFIGS[locationSlug]
-  if (!cfg) throw new Error('No config for slug: ' + locationSlug)
-
+async function getPosterLocationConfig(locationSlug: string) {
   const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
   if (!location) throw new Error('Location not found: ' + locationSlug)
+  if (!location.hasPoster) throw new Error('Poster is disabled for location: ' + locationSlug)
+  if (!location.posterSubdomain) throw new Error('Poster subdomain is missing for location: ' + locationSlug)
+  if (!location.posterToken) throw new Error('Poster token is missing for location: ' + locationSlug)
+
+  return {
+    location,
+    subdomain: location.posterSubdomain,
+    token: location.posterToken,
+  }
+}
+
+function getPosterServiceMode(location: { slug: string }): 1 | 2 | 3 {
+  const profile = getLocationProfile(location)
+  if (profile.format === 'FAMILY_CAFE') return 1
+  return 2
+}
+
+export async function createPosterIncomingOrder(input: {
+  location: {
+    id: number
+    name: string
+    slug: string
+    posterToken: string | null
+    posterSpotId: number | null
+    hasPoster: boolean
+  }
+  firstName: string
+  lastName?: string | null
+  phone: string
+  comment?: string | null
+  products: Array<{ product_id: number; count: number }>
+}) {
+  if (!input.location.hasPoster) {
+    throw new Error('Poster is disabled for this location')
+  }
+  if (!input.location.posterToken) {
+    throw new Error(`Poster token is missing for ${input.location.name}`)
+  }
+  if (!input.location.posterSpotId) {
+    throw new Error(`Poster spot ID is missing for ${input.location.name}`)
+  }
+  if (input.products.length === 0) {
+    throw new Error('Poster order requires at least one product')
+  }
+
+  const payload: Record<string, unknown> = {
+    spot_id: input.location.posterSpotId,
+    phone: normalizePhone(input.phone),
+    first_name: input.firstName,
+    service_mode: getPosterServiceMode(input.location),
+    products: input.products,
+  }
+
+  if (input.lastName) payload.last_name = input.lastName
+  if (input.comment) payload.comment = input.comment
+
+  const response = await axios.post(
+    `https://joinposter.com/api/incomingOrders.createIncomingOrder?token=${input.location.posterToken}`,
+    payload,
+    { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
+  )
+
+  const incomingOrderId = response.data?.response?.incoming_order_id
+  if (!incomingOrderId) {
+    throw new Error('Poster did not return incoming_order_id')
+  }
+
+  return {
+    incomingOrderId: String(incomingOrderId),
+    raw: response.data,
+  }
+}
+
+export async function syncPosterMenu(locationSlug: string): Promise<{ synced: number; errors: string[] }> {
+  const cfg = await getPosterLocationConfig(locationSlug)
+  const { location } = cfg
 
   console.log('[Poster] Sync ' + locationSlug + ' via ' + cfg.subdomain + '.joinposter.com')
 
@@ -118,12 +183,18 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
 }
 
 export async function syncAllLocations(): Promise<void> {
-  for (const slug of Object.keys(LOCATION_CONFIGS)) {
+  const locations = await prisma.location.findMany({
+    where: { hasPoster: true, isActive: true },
+    select: { slug: true },
+    orderBy: { id: 'asc' },
+  })
+
+  for (const location of locations) {
     try {
-      const result = await syncPosterMenu(slug)
-      console.log('[Poster] ' + slug + ' OK: ' + result.synced + ' products')
+      const result = await syncPosterMenu(location.slug)
+      console.log('[Poster] ' + location.slug + ' OK: ' + result.synced + ' products')
     } catch (e: any) {
-      console.error('[Poster] ' + slug + ' FAILED: ' + (e?.message || String(e)))
+      console.error('[Poster] ' + location.slug + ' FAILED: ' + (e?.message || String(e)))
     }
   }
 }

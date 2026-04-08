@@ -70,6 +70,7 @@ model User {
   referrals           User[]    @relation("Referrals")
   referralBonusPaid   Boolean   @default(false)
   preferredLocationId Int?
+  phone               String?
   language            String    @default("uk")
   noShowCount         Int       @default(0)
   cashPaymentBlocked  Boolean   @default(false)
@@ -108,6 +109,7 @@ model Location {
   radius              Int      @default(100)
   allowOrders         Boolean  @default(false)
   hasPoster           Boolean  @default(false)
+  menuCategories      Json?
   posterSubdomain     String?
   posterAccount       String?
   posterToken         String?
@@ -165,6 +167,7 @@ model Product {
   modifiers       Json?
   isAvailable     Boolean  @default(true)
   ordersCount     Int      @default(0)
+  categoryOrder   Int      @default(0)
   sortOrder       Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

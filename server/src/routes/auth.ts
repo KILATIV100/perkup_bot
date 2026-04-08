@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { verifyTelegramInitData, verifyTelegramLoginWidget } from '../lib/telegram'
+import { normalizePhone } from '../lib/phone'
 
 const loginSchema = z.object({
   initData: z.string().min(1),
@@ -26,7 +27,7 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(400).send({ success: false, error: 'Invalid request' })
     }
 
-    const user = await prisma.user.upsert({
+    const user: any = await prisma.user.upsert({
       where: { telegramId: BigInt(body.data.telegramId || 999000001) },
       update: { lastActivity: new Date() },
       create: {
@@ -50,6 +51,7 @@ export default async function authRoutes(app: FastifyInstance) {
         role: user.role,
         points: user.points,
         level: user.level,
+        phone: user.phone,
         language: user.language,
         onboardingDone: user.onboardingDone,
       },
@@ -90,7 +92,7 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ success: false, error: err.message })
     }
 
-    const user = await prisma.user.upsert({
+    const user: any = await prisma.user.upsert({
       where: { telegramId: BigInt(tgUser.id) },
       update: {
         firstName: tgUser.first_name,
@@ -120,6 +122,7 @@ export default async function authRoutes(app: FastifyInstance) {
         role: user.role,
         points: user.points,
         level: user.level,
+        phone: user.phone,
         language: user.language,
         onboardingDone: user.onboardingDone,
       },
@@ -153,7 +156,7 @@ export default async function authRoutes(app: FastifyInstance) {
     }
 
     // Upsert user
-    const user = await prisma.user.upsert({
+    const user: any = await prisma.user.upsert({
       where: { telegramId: BigInt(tgUser.id) },
       update: {
         firstName: tgUser.first_name,
@@ -202,6 +205,7 @@ export default async function authRoutes(app: FastifyInstance) {
         role: user.role,
         points: user.points,
         level: user.level,
+        phone: user.phone,
         language: user.language,
         onboardingDone: user.onboardingDone,
       },
@@ -215,7 +219,7 @@ export default async function authRoutes(app: FastifyInstance) {
       catch { return reply.status(401).send({ success: false, error: 'Unauthorized' }) }
     },
   }, async (req, reply) => {
-    const user = await prisma.user.findUnique({
+    const user: any = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
         id: true,
@@ -228,6 +232,7 @@ export default async function authRoutes(app: FastifyInstance) {
         level: true,
         monthlyOrders: true,
         birthDate: true,
+        phone: true,
         language: true,
         preferredLocationId: true,
         onboardingDone: true,
@@ -264,6 +269,7 @@ export default async function authRoutes(app: FastifyInstance) {
     const body = z.object({
       preferredLocationId: z.number().optional(),
       birthDate: z.string().optional(),
+      phone: z.string().optional(),
       language: z.enum(['uk', 'en']).optional(),
     }).safeParse(req.body)
 
@@ -274,6 +280,13 @@ export default async function authRoutes(app: FastifyInstance) {
     const updateData: any = { onboardingDone: true }
     if (body.data.preferredLocationId) updateData.preferredLocationId = body.data.preferredLocationId
     if (body.data.language) updateData.language = body.data.language
+    if (body.data.phone) {
+      try {
+        updateData.phone = normalizePhone(body.data.phone)
+      } catch (error) {
+        return reply.status(400).send({ success: false, error: (error as Error).message })
+      }
+    }
     if (body.data.birthDate) {
       updateData.birthDate = new Date(body.data.birthDate)
       // Give 10 bonus points for filling birthday
@@ -311,6 +324,7 @@ export default async function authRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const body = z.object({
       language: z.enum(['uk', 'en']).optional(),
+      phone: z.string().optional(),
       notifSpin: z.boolean().optional(),
       notifWinback: z.boolean().optional(),
       notifMorning: z.boolean().optional(),
@@ -323,6 +337,13 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const data: any = {}
     if (body.data.language !== undefined) data.language = body.data.language
+    if (body.data.phone !== undefined) {
+      try {
+        data.phone = body.data.phone ? normalizePhone(body.data.phone) : null
+      } catch (error) {
+        return reply.status(400).send({ success: false, error: (error as Error).message })
+      }
+    }
     if (body.data.notifSpin !== undefined) data.notifSpin = body.data.notifSpin
     if (body.data.notifWinback !== undefined) data.notifWinback = body.data.notifWinback
     if (body.data.notifMorning !== undefined) data.notifMorning = body.data.notifMorning
@@ -332,10 +353,11 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(400).send({ success: false, error: 'No fields to update' })
     }
 
-    const user = await prisma.user.update({
+    const user: any = await prisma.user.update({
       where: { id: req.user.id },
       data,
       select: {
+        phone: true,
         language: true,
         notifSpin: true,
         notifWinback: true,
@@ -386,7 +408,7 @@ export default async function authRoutes(app: FastifyInstance) {
     } catch {}
 
     // Reset user fields
-    const user = await prisma.user.update({
+    const user: any = await prisma.user.update({
       where: { id: userId },
       data: {
         points: 0,
@@ -416,6 +438,7 @@ export default async function authRoutes(app: FastifyInstance) {
         role: user.role,
         points: user.points,
         level: user.level,
+        phone: user.phone,
         language: user.language,
         onboardingDone: user.onboardingDone,
       },

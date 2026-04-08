@@ -6,6 +6,12 @@ import { locationsApi } from '../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 
+const LOCATION_FORMAT_LABELS: Record<string, string> = {
+  SELF_SERVICE: 'Самообслуговування',
+  TO_GO: 'To go',
+  FAMILY_CAFE: 'Сімейне кафе',
+}
+
 export default function Header() {
   const [showPicker, setShowPicker] = useState(false)
   const { locations, activeLocation, setLocations, setActiveLocation } = useLocationStore()
@@ -116,6 +122,9 @@ export default function Header() {
                       <div>
                         <div className="font-semibold text-gray-900">{loc.name}</div>
                         <div className="text-sm text-gray-500 mt-0.5">{loc.address}</div>
+                        {loc.format && (
+                          <div className="text-xs text-gray-400 mt-1">{LOCATION_FORMAT_LABELS[loc.format] || loc.format}</div>
+                        )}
                         {loc.distanceMeters && (
                           <div className="text-xs text-coffee-500 mt-1">
                             📍 {loc.distanceMeters < 1000

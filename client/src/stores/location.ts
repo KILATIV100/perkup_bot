@@ -9,6 +9,11 @@ interface Location {
   lat: number
   lng: number
   allowOrders: boolean
+  format?: 'SELF_SERVICE' | 'TO_GO' | 'FAMILY_CAFE'
+  posSystem?: 'NONE' | 'POSTER'
+  menuManagement?: 'LOCAL' | 'POSTER_SYNC'
+  paymentFlow?: 'CASHIER_ONLY'
+  remoteOrderingEnabled?: boolean
   isOpen: boolean
   nextOpenTime?: string
   distanceMeters?: number

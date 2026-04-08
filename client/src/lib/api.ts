@@ -32,9 +32,9 @@ export const authApi = {
   loginWithWidget: (data: any) => api.post('/api/auth/widget-login', data),
   devLogin: (telegramId?: number, firstName?: string) => api.post('/api/auth/dev-login', { telegramId, firstName }),
   getMe: () => api.get('/api/auth/me'),
-  completeOnboarding: (data: { preferredLocationId?: number; birthDate?: string; language?: string }) =>
+  completeOnboarding: (data: { preferredLocationId?: number; birthDate?: string; phone?: string; language?: string }) =>
     api.patch('/api/auth/onboarding', data),
-  updateSettings: (data: { language?: string; notifSpin?: boolean; notifWinback?: boolean; notifMorning?: boolean; notifPromo?: boolean }) =>
+  updateSettings: (data: { language?: string; phone?: string; notifSpin?: boolean; notifWinback?: boolean; notifMorning?: boolean; notifPromo?: boolean }) =>
     api.patch('/api/auth/settings', data),
   testReset: () => api.post('/api/auth/test-reset'),
   testAddOrders: (count: number, locationSlug?: string) => api.post('/api/auth/test-add-orders', { count, locationSlug }),
@@ -103,9 +103,16 @@ export const adminApi = {
   getLocations: () => api.get('/api/admin/locations'),
   updateLocation: (id: number, data: any) => api.patch(`/api/admin/locations/${id}`, data),
   getMenu: (locationSlug: string) => api.get(`/api/admin/menu/${locationSlug}`),
+  createCategory: (locationSlug: string, name: string) => api.post(`/api/admin/menu/${locationSlug}/categories`, { name }),
+  renameCategory: (locationSlug: string, oldName: string, name: string) => api.patch(`/api/admin/menu/${locationSlug}/categories`, { oldName, name }),
+  deleteCategory: (locationSlug: string, categoryName: string, moveProductsTo?: string) => api.delete(`/api/admin/menu/${locationSlug}/categories/${encodeURIComponent(categoryName)}`, { data: moveProductsTo ? { moveProductsTo } : {} }),
   reorderCategories: (locationSlug: string, categories: string[]) => api.post(`/api/admin/menu/${locationSlug}/reorder-categories`, { categories }),
+  createProduct: (locationSlug: string, data: any) => api.post(`/api/admin/menu/${locationSlug}/products`, data),
   reorderProducts: (locationSlug: string, productIds: number[]) => api.post(`/api/admin/menu/${locationSlug}/reorder-products`, { productIds }),
   updateProduct: (id: number, data: any) => api.patch(`/api/admin/products/${id}`, data),
+  deleteProduct: (id: number) => api.delete(`/api/admin/products/${id}`),
   syncAll: () => api.post('/api/admin/sync'),
   syncLocation: (slug: string) => api.post(`/api/admin/sync/${slug}`),
+  getMenuQrUrl: (locationSlug: string) => `${BASE_URL}/api/menu/${encodeURIComponent(locationSlug)}/qr.svg`,
+  getPrintMenuUrl: (locationSlug: string) => `${BASE_URL}/api/menu/${encodeURIComponent(locationSlug)}/print`,
 }

@@ -11,6 +11,7 @@ interface User {
   role: string
   points: number
   level: string
+  phone?: string | null
   language: string
   onboardingDone: boolean
   preferredLocationId?: number

@@ -16,6 +16,7 @@ export default function ProfilePage() {
         </div>
         <div className="text-xl font-bold text-gray-800">{user?.firstName || 'Гість'}</div>
         <div className="text-sm text-gray-500 mt-1">Рівень: <span className="font-semibold text-coffee-600">{user?.level || 'BRONZE'}</span></div>
+        <div className="text-sm text-gray-500 mt-1">Телефон: <span className="font-semibold text-coffee-600">{user?.phone || 'Не вказано'}</span></div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 p-2 shadow-sm">

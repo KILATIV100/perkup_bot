@@ -17,6 +17,9 @@ export default function CartPage() {
   return (
     <div className="p-4 space-y-3 pb-28">
       <h1 className="text-2xl font-bold text-coffee-700">🛒 Кошик</h1>
+      <div className="bg-coffee-50 border border-coffee-200 rounded-2xl p-3 text-sm text-coffee-900">
+        Оплата проводиться на касі у бариста цієї точки. У застосунку ти лише створюєш передзамовлення.
+      </div>
       {items.map((item) => (
         <div key={item.id} className="bg-white border border-gray-100 rounded-2xl p-3">
           <div className="flex justify-between items-center">

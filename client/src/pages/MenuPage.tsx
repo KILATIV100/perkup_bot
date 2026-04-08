@@ -29,6 +29,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: '📦 Інше',
 }
 
+const LOCATION_FORMAT_LABELS: Record<string, string> = {
+  SELF_SERVICE: 'самообслуговування',
+  TO_GO: 'to go',
+  FAMILY_CAFE: 'сімейне кафе',
+}
+
 export default function MenuPage() {
   const navigate = useNavigate()
   const { activeLocation } = useLocationStore()
@@ -70,8 +76,16 @@ export default function MenuPage() {
 
   return (
     <div className="p-4 space-y-4 pb-28">
-      {!activeLocation.allowOrders && activeLocation.slug === 'mark-mall' && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 text-sm">🏪 Самообслуговування — обери позиції та підійди до каси.</div>
+      {activeLocation.format === 'SELF_SERVICE' && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-3 text-sm">
+          🏪 Точка самообслуговування. Меню можна переглядати в застосунку, але оформлення та оплата відбуваються тільки на місці.
+        </div>
+      )}
+
+      {activeLocation.allowOrders && activeLocation.paymentFlow === 'CASHIER_ONLY' && (
+        <div className="bg-coffee-100 border border-coffee-200 text-coffee-900 rounded-2xl p-3 text-sm">
+          Передзамовлення для формату {LOCATION_FORMAT_LABELS[activeLocation.format || 'TO_GO'] || 'to go'}: замовлення створюється в системі точки, а оплата проходить тільки на касі у бариста.
+        </div>
       )}
 
       <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Пошук по меню..." className="w-full border border-gray-200 rounded-xl px-3 py-2" />

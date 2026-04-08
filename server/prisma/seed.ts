@@ -8,7 +8,21 @@ async function main() {
   // ─── LOCATIONS ────────────────────────────────────────────────
   const markMall = await prisma.location.upsert({
     where: { slug: 'mark-mall' },
-    update: {},
+    update: {
+      name: 'Mark Mall',
+      address: 'Mark Mall, Бровари',
+      lat: 50.5100,
+      lng: 30.7900,
+      radius: 50,
+      allowOrders: false,
+      hasPoster: false,
+      posterSubdomain: null,
+      posterAccount: null,
+      posterToken: null,
+      posterSpotId: null,
+      hasPrinter: true,
+      isActive: true,
+    },
     create: {
       slug: 'mark-mall',
       name: 'Mark Mall',
@@ -26,7 +40,20 @@ async function main() {
 
   const krona = await prisma.location.upsert({
     where: { slug: 'krona' },
-    update: {},
+    update: {
+      name: 'ЖК Крона Парк 2',
+      address: 'ЖК Крона Парк 2, Бровари',
+      lat: 50.5150,
+      lng: 30.7950,
+      radius: 100,
+      allowOrders: true,
+      hasPoster: true,
+      posterSubdomain: 'perkup2',
+      posterAccount: '400311',
+      posterToken: '400311:442859326f65b2aa1974a9ebd303b8a8',
+      hasPrinter: false,
+      isActive: true,
+    },
     create: {
       slug: 'krona',
       name: 'ЖК Крона Парк 2',
@@ -35,6 +62,7 @@ async function main() {
       lng: 30.7950,
       radius: 100,
       allowOrders: true,
+      hasPoster: true,
       posterSubdomain: 'perkup2',
       posterAccount: '400311',
       posterToken: '400311:442859326f65b2aa1974a9ebd303b8a8',
@@ -47,7 +75,20 @@ async function main() {
 
   const pryozerny = await prisma.location.upsert({
     where: { slug: 'pryozerny' },
-    update: {},
+    update: {
+      name: 'Парк Приозерний',
+      address: 'Парк Приозерний, Бровари',
+      lat: 50.5050,
+      lng: 30.7850,
+      radius: 100,
+      allowOrders: true,
+      hasPoster: true,
+      posterSubdomain: 'perkup',
+      posterAccount: '483421',
+      posterToken: '483421:44288031aab04be166b1455d61771e0f',
+      hasPrinter: false,
+      isActive: true,
+    },
     create: {
       slug: 'pryozerny',
       name: 'Парк Приозерний',
@@ -56,6 +97,7 @@ async function main() {
       lng: 30.7850,
       radius: 100,
       allowOrders: true,
+      hasPoster: true,
       posterSubdomain: 'perkup',
       posterAccount: '483421',
       posterToken: '483421:44288031aab04be166b1455d61771e0f',
