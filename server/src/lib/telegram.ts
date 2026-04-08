@@ -76,3 +76,44 @@ export function verifyTelegramInitData(initDataRaw: string): TelegramInitData {
 export function buildJwtPayload(userId: number, role: string) {
   return { id: userId, role }
 }
+
+/**
+ * Verify Telegram Login Widget data
+ * https://core.telegram.org/widgets/login#checking-authorization
+ */
+export function verifyTelegramLoginWidget(data: Record<string, string>): TelegramUser {
+  const botToken = process.env.BOT_TOKEN
+  if (!botToken) throw new Error('BOT_TOKEN not configured')
+
+  const { hash, ...rest } = data
+  if (!hash) throw new Error('Missing hash')
+
+  // Build data-check-string (sorted alphabetically)
+  const dataCheckString = Object.keys(rest)
+    .sort()
+    .map(key => `${key}=${rest[key]}`)
+    .join('\n')
+
+  // For Login Widget: secret = SHA256(bot_token), NOT HMAC
+  const secretKey = crypto.createHash('sha256').update(botToken).digest()
+  const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex')
+
+  if (computedHash !== hash) {
+    throw new Error('Invalid login widget signature')
+  }
+
+  // Check auth_date (not older than 24 hours)
+  const authDate = parseInt(rest.auth_date || '0')
+  const now = Math.floor(Date.now() / 1000)
+  if (now - authDate > 86400) {
+    throw new Error('Login data expired')
+  }
+
+  return {
+    id: parseInt(rest.id),
+    first_name: rest.first_name,
+    last_name: rest.last_name || undefined,
+    username: rest.username || undefined,
+    photo_url: rest.photo_url || undefined,
+  }
+}

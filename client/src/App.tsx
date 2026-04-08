@@ -12,6 +12,7 @@ import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminPage from './pages/AdminPage'
+import LoginPage from './pages/LoginPage'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
@@ -25,6 +26,8 @@ export default function App() {
   }, [])
 
   if (!initialized || isLoading) return <LoadingScreen />
+
+  if (!isAuthenticated || !user) return <LoginPage />
 
   if (user && !user.onboardingDone) return <OnboardingPage />
 

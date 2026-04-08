@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
-import { verifyTelegramInitData } from '../lib/telegram'
+import { verifyTelegramInitData, verifyTelegramLoginWidget } from '../lib/telegram'
 
 const loginSchema = z.object({
   initData: z.string().min(1),
@@ -34,6 +34,76 @@ export default async function authRoutes(app: FastifyInstance) {
         firstName: body.data.firstName || 'Dev User',
         language: 'uk',
         onboardingDone: true,
+      },
+    })
+
+    const token = app.jwt.sign({ id: user.id, role: user.role })
+
+    return reply.send({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+        role: user.role,
+        points: user.points,
+        level: user.level,
+        language: user.language,
+        onboardingDone: user.onboardingDone,
+      },
+    })
+  })
+
+  // POST /api/auth/widget-login — Telegram Login Widget (browser auth)
+  app.post('/widget-login', async (req, reply) => {
+    const body = z.object({
+      id: z.coerce.string(),
+      first_name: z.string(),
+      last_name: z.string().optional(),
+      username: z.string().optional(),
+      photo_url: z.string().optional(),
+      auth_date: z.coerce.string(),
+      hash: z.string(),
+    }).safeParse(req.body)
+
+    if (!body.success) {
+      return reply.status(400).send({ success: false, error: 'Invalid request' })
+    }
+
+    let tgUser
+    try {
+      // Build the data object for verification (all string values)
+      const dataForVerify: Record<string, string> = {
+        id: body.data.id,
+        first_name: body.data.first_name,
+        auth_date: body.data.auth_date,
+        hash: body.data.hash,
+      }
+      if (body.data.last_name) dataForVerify.last_name = body.data.last_name
+      if (body.data.username) dataForVerify.username = body.data.username
+      if (body.data.photo_url) dataForVerify.photo_url = body.data.photo_url
+
+      tgUser = verifyTelegramLoginWidget(dataForVerify)
+    } catch (err: any) {
+      return reply.status(401).send({ success: false, error: err.message })
+    }
+
+    const user = await prisma.user.upsert({
+      where: { telegramId: BigInt(tgUser.id) },
+      update: {
+        firstName: tgUser.first_name,
+        lastName: tgUser.last_name || null,
+        username: tgUser.username || null,
+        lastActivity: new Date(),
+      },
+      create: {
+        telegramId: BigInt(tgUser.id),
+        firstName: tgUser.first_name,
+        lastName: tgUser.last_name || null,
+        username: tgUser.username || null,
+        language: 'uk',
       },
     })
 
