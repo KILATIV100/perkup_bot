@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../stores/auth'
-import { adminApi } from '../lib/api'
+import { adminApi, authApi } from '../lib/api'
 
 type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations'
 
@@ -34,10 +34,10 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ]
 
 export default function AdminPanel() {
-  const { user, logout } = useAuthStore()
+  const { user, isAuthenticated, logout } = useAuthStore()
   const [tab, setTab] = useState<Tab>('dashboard')
 
-  if (!user) return null
+  const isAdmin = user && ['ADMIN', 'OWNER'].includes(user.role)
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -59,24 +59,95 @@ export default function AdminPanel() {
           ))}
         </nav>
         <div className="p-4 border-t border-coffee-800">
-          <div className="text-sm font-medium">{user.firstName}</div>
-          <div className="text-xs text-coffee-400">{user.role}</div>
-          <button onClick={logout} className="mt-3 w-full text-xs text-coffee-400 hover:text-white transition-colors text-left">
-            Вийти →
-          </button>
+          {isAuthenticated && user ? (
+            <>
+              <div className="text-sm font-medium">{user.firstName}</div>
+              <div className="text-xs text-coffee-400">{user.role}</div>
+              <button onClick={logout} className="mt-3 w-full text-xs text-coffee-400 hover:text-white transition-colors text-left">
+                Вийти →
+              </button>
+            </>
+          ) : (
+            <TelegramLoginButton />
+          )}
         </div>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 p-6 overflow-auto">
         <div className="max-w-5xl mx-auto">
-          {tab === 'dashboard' && <DashboardTab />}
-          {tab === 'users' && <UsersTab isOwner={user.role === 'OWNER'} />}
-          {tab === 'orders' && <OrdersTab />}
-          {tab === 'menu' && <MenuTab />}
-          {tab === 'locations' && <LocationsTab />}
+          {!isAuthenticated ? (
+            <div className="flex items-center justify-center h-[60vh]">
+              <div className="text-center">
+                <div className="text-5xl mb-4">☕</div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">PerkUp CPanel</h2>
+                <p className="text-gray-500">Увійдіть через Telegram для доступу до панелі</p>
+              </div>
+            </div>
+          ) : !isAdmin ? (
+            <div className="flex items-center justify-center h-[60vh]">
+              <div className="text-center">
+                <div className="text-5xl mb-4">⛔</div>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Недостатньо прав</h2>
+                <p className="text-gray-500 text-sm">Доступ лише для адміністраторів.<br/>Зверніться до власника для отримання ролі.</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {tab === 'dashboard' && <DashboardTab />}
+              {tab === 'users' && <UsersTab isOwner={user.role === 'OWNER'} />}
+              {tab === 'orders' && <OrdersTab />}
+              {tab === 'menu' && <MenuTab />}
+              {tab === 'locations' && <LocationsTab />}
+            </>
+          )}
         </div>
       </main>
+    </div>
+  )
+}
+
+// ─── TELEGRAM LOGIN BUTTON ──────────────────────────────────────
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'PerkUpCoffeeBot'
+
+function TelegramLoginButton() {
+  const { setAuth } = useAuthStore()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    (window as any).onTelegramCPanelAuth = async (tgUser: any) => {
+      setError('')
+      try {
+        const res = await authApi.loginWithWidget(tgUser)
+        const { token, user } = res.data
+        setAuth(token, user)
+      } catch (e: any) {
+        setError(e.response?.data?.error || 'Помилка')
+      }
+    }
+
+    if (containerRef.current) {
+      const script = document.createElement('script')
+      script.src = 'https://telegram.org/js/telegram-widget.js?22'
+      script.setAttribute('data-telegram-login', BOT_USERNAME)
+      script.setAttribute('data-size', 'medium')
+      script.setAttribute('data-radius', '8')
+      script.setAttribute('data-onauth', 'onTelegramCPanelAuth(user)')
+      script.setAttribute('data-request-access', 'write')
+      script.async = true
+      containerRef.current.innerHTML = ''
+      containerRef.current.appendChild(script)
+    }
+
+    return () => { delete (window as any).onTelegramCPanelAuth }
+  }, [setAuth])
+
+  return (
+    <div>
+      <div className="text-xs text-coffee-400 mb-2">Увійти через Telegram</div>
+      <div ref={containerRef} />
+      {error && <div className="text-xs text-red-400 mt-2">{error}</div>}
     </div>
   )
 }

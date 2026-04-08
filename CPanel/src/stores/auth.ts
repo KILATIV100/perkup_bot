@@ -43,11 +43,6 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await authApi.getMe()
           const user = res.data.user
-          if (!['ADMIN', 'OWNER'].includes(user.role)) {
-            localStorage.removeItem('cpanel_token')
-            set({ user: null, token: null, isAuthenticated: false, isLoading: false })
-            return
-          }
           set({ token: savedToken, user, isAuthenticated: true, isLoading: false })
         } catch {
           localStorage.removeItem('cpanel_token')
