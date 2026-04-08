@@ -199,6 +199,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'ai.dailyChallenge': { uk: '🎯 Щоденний виклик', en: '🎯 Daily challenge' },
   'ai.challengeDone': { uk: 'Виклик виконано сьогодні!', en: 'Challenge completed today!' },
   'ai.claimChallenge': { uk: 'Виконано! Отримати {n} балів', en: 'Done! Claim {n} points' },
+  'ai.loginRequired': { uk: 'Увійдіть, щоб скористатися', en: 'Sign in to use this feature' },
   'ai.mood.happy': { uk: 'Радісний', en: 'Happy' },
   'ai.mood.sleepy': { uk: 'Сонний', en: 'Sleepy' },
   'ai.mood.stressed': { uk: 'Стрес', en: 'Stressed' },

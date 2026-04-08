@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useLocationStore } from '../stores/location'
+import { useAuthStore } from '../stores/auth'
 import { aiApi } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 export default function AiPage() {
   const { activeLocation } = useLocationStore()
+  const { isAuthenticated } = useAuthStore()
   const slug = activeLocation?.slug
   const t = useT()
 
@@ -162,38 +164,44 @@ export default function AiPage() {
           <span className="text-2xl">🎭</span>
           <h2 className="font-bold text-gray-800">{t('ai.mood')}</h2>
         </div>
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          {MOOD_OPTIONS.map(m => (
-            <button
-              key={m.label}
-              onClick={() => handleMood(m.value)}
-              disabled={moodLoading}
-              className={`flex flex-col items-center p-2 rounded-xl transition-all active:scale-95 ${
-                selectedMood === m.value
-                  ? 'bg-coffee-100 border-2 border-coffee-400'
-                  : 'bg-gray-50 border border-gray-100 hover:bg-gray-100'
-              }`}
-            >
-              <span className="text-xl">{m.emoji}</span>
-              <span className="text-[10px] text-gray-600 mt-1">{m.label}</span>
-            </button>
-          ))}
-        </div>
-        {moodLoading && (
-          <div className="space-y-2 animate-pulse">
-            <div className="h-4 bg-gray-100 rounded w-full" />
-            <div className="h-4 bg-gray-100 rounded w-2/3" />
-          </div>
-        )}
-        {moodResult && !moodLoading && (
-          <div className="bg-coffee-50/50 p-3 rounded-xl">
-            <p className="text-sm text-gray-700 leading-relaxed">{moodResult.recommendation}</p>
-            {moodResult.matchedDrink && (
-              <div className="mt-2 inline-block bg-coffee-100 text-coffee-800 text-xs font-bold px-3 py-1 rounded-full">
-                ☕ {moodResult.matchedDrink}
+        {!isAuthenticated ? (
+          <p className="text-sm text-gray-400">{t('ai.loginRequired')}</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {MOOD_OPTIONS.map(m => (
+                <button
+                  key={m.label}
+                  onClick={() => handleMood(m.value)}
+                  disabled={moodLoading}
+                  className={`flex flex-col items-center p-2 rounded-xl transition-all active:scale-95 ${
+                    selectedMood === m.value
+                      ? 'bg-coffee-100 border-2 border-coffee-400'
+                      : 'bg-gray-50 border border-gray-100 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="text-xl">{m.emoji}</span>
+                  <span className="text-[10px] text-gray-600 mt-1">{m.label}</span>
+                </button>
+              ))}
+            </div>
+            {moodLoading && (
+              <div className="space-y-2 animate-pulse">
+                <div className="h-4 bg-gray-100 rounded w-full" />
+                <div className="h-4 bg-gray-100 rounded w-2/3" />
               </div>
             )}
-          </div>
+            {moodResult && !moodLoading && (
+              <div className="bg-coffee-50/50 p-3 rounded-xl">
+                <p className="text-sm text-gray-700 leading-relaxed">{moodResult.recommendation}</p>
+                {moodResult.matchedDrink && (
+                  <div className="mt-2 inline-block bg-coffee-100 text-coffee-800 text-xs font-bold px-3 py-1 rounded-full">
+                    ☕ {moodResult.matchedDrink}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -205,14 +213,16 @@ export default function AiPage() {
         </div>
         <p className="text-xs text-amber-600 mb-3">{t('ai.personalSubtitle')}</p>
 
-        {!personal && !personalLoading && (
+        {!isAuthenticated ? (
+          <p className="text-sm text-gray-400">{t('ai.loginRequired')}</p>
+        ) : !personal && !personalLoading ? (
           <button
             onClick={handlePersonal}
             className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition-colors active:scale-[0.98]"
           >
             {t('ai.getRecommendation')}
           </button>
-        )}
+        ) : null}
 
         {personalLoading && (
           <div className="space-y-2 animate-pulse">
@@ -306,7 +316,7 @@ export default function AiPage() {
               <div className="text-center text-sm text-violet-600 font-semibold bg-violet-100 rounded-xl py-2.5">
                 ✅ {t('ai.challengeDone')} +{challenge.points} {t('profile.points')}
               </div>
-            ) : (
+            ) : isAuthenticated ? (
               <button
                 onClick={handleClaim}
                 disabled={claiming}
@@ -314,6 +324,8 @@ export default function AiPage() {
               >
                 {claiming ? '⏳ ...' : t('ai.claimChallenge', { n: challenge.points })}
               </button>
+            ) : (
+              <p className="text-sm text-gray-400">{t('ai.loginRequired')}</p>
             )}
           </>
         ) : (
