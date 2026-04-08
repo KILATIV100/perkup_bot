@@ -67,7 +67,6 @@ const translations: Record<string, Record<Lang, string>> = {
   'menu.selfServiceBanner': { uk: '🏪 Точка самообслуговування. Меню можна переглядати в застосунку, але оформлення та оплата відбуваються тільки на місці.', en: '🏪 Self-service location. Browse the menu in the app, but ordering and payment are on-site only.' },
   'menu.preorderBanner': { uk: 'Передзамовлення: замовлення створюється в системі точки, а оплата проходить тільки на касі у бариста.', en: 'Preorder: the order is sent to the location system, payment is at the cashier only.' },
   'menu.preorderFormat': { uk: 'Передзамовлення для формату', en: 'Preorder for format' },
-  'menu.preorderBanner': { uk: 'замовлення створюється в системі точки, а оплата проходить тільки на касі у бариста.', en: 'the order is sent to the location system, payment is at the cashier only.' },
   'menu.all': { uk: 'Усі', en: 'All' },
   'menu.selectLocation': { uk: 'Оберіть точку у хедері, щоб побачити меню.', en: 'Select a location in the header to see the menu.' },
   'menu.category.coffee': { uk: '☕ Кава', en: '☕ Coffee' },
