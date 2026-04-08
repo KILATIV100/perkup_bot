@@ -73,6 +73,25 @@
         }
       }
       setTimeout(window.__hideSplash, 3000)
+
+      // If React doesn't render within 8 seconds, show debug info
+      setTimeout(function() {
+        var root = document.getElementById('root')
+        if (root && root.children.length === 0) {
+          root.innerHTML = '<div style="padding:24px;text-align:center;font-family:system-ui;color:#6b3a2a;">' +
+            '<h2 style="margin-bottom:12px;">⚠️ Помилка завантаження</h2>' +
+            '<p style="color:#888;font-size:14px;" id="err-msg">Додаток не зміг завантажитись. Перевірте консоль браузера (F12).</p>' +
+            '<button onclick="location.reload()" style="margin-top:16px;padding:8px 24px;background:#6b3a2a;color:white;border:none;border-radius:8px;cursor:pointer;">Оновити</button>' +
+            '</div>'
+        }
+      }, 8000)
+
+      // Catch unhandled JS errors and show them
+      window.onerror = function(msg, url, line, col, err) {
+        console.error('Global error:', msg, url, line, col, err)
+        var el = document.getElementById('err-msg')
+        if (el) el.textContent = 'Error: ' + msg
+      }
     </script>
 
     <script type="module" src="/src/main.tsx"></script>

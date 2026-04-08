@@ -21,7 +21,9 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('perkup_token')
-      // Don't reload — let the app handle guest state gracefully
+      // Lazy import to avoid circular dependency (api → auth → api)
+      const { useAuthStore } = await import('../stores/auth')
+      useAuthStore.getState().logout()
     }
     return Promise.reject(error)
   }

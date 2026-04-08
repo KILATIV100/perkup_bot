@@ -22,7 +22,10 @@ export default function App() {
   const [initialized, setInitialized] = useState(false)
 
   useEffect(() => {
-    login().finally(() => setInitialized(true))
+    login().finally(() => {
+      setInitialized(true)
+      window.__hideSplash?.()
+    })
   }, [])
 
   if (!initialized || isLoading) return <LoadingScreen />

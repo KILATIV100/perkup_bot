@@ -28,7 +28,26 @@ const app = Fastify({ logger: { level: 'info' }, ignoreTrailingSlash: true, igno
 
 async function bootstrap() {
   await app.register(cors, {
-    origin: [process.env.CLIENT_URL || 'https://perkup.com.ua', process.env.ADMIN_URL || 'https://admin.perkup.com.ua', 'http://localhost:5173', 'http://localhost:3001'],
+    origin: (origin, cb) => {
+      const allowed = [
+        process.env.CLIENT_URL || 'https://perkup.com.ua',
+        process.env.ADMIN_URL || 'https://admin.perkup.com.ua',
+        'http://localhost:5173',
+        'http://localhost:3001',
+      ]
+      // Also accept www variants and http variants of client/admin URLs
+      const extra = [
+        'https://www.perkup.com.ua',
+        'http://perkup.com.ua',
+        'http://www.perkup.com.ua',
+      ]
+      const all = [...allowed, ...extra]
+      if (!origin || all.includes(origin)) {
+        cb(null, true)
+      } else {
+        cb(null, false)
+      }
+    },
     credentials: true,
   })
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'fallback-secret', sign: { expiresIn: '7d' } })
