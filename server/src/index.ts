@@ -70,8 +70,8 @@ async function bootstrap() {
   app.setErrorHandler((error, _req, reply) => {
     if (error.statusCode === 429) return reply.status(429).send({ success: false, error: 'Too many requests' })
     if (error.statusCode && error.statusCode < 500) return reply.status(error.statusCode).send({ success: false, error: error.message })
-    console.error(error)
-    return reply.status(500).send({ success: false, error: 'Internal server error' })
+    console.error('[500 ERROR]', error.message, error.stack)
+    return reply.status(500).send({ success: false, error: 'Internal server error', detail: error.message })
   })
   const port = parseInt(process.env.PORT || '3000')
   await app.listen({ port, host: '0.0.0.0' })
