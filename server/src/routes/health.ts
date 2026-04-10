@@ -79,9 +79,63 @@ export default async function healthRoutes(app: FastifyInstance) {
         hasRedisUrl: !!process.env.REDIS_URL,
         hasBotToken: !!process.env.BOT_TOKEN,
         hasJwtSecret: !!process.env.JWT_SECRET,
+        hasClientUrl: process.env.CLIENT_URL || '(not set, default: perkup.com.ua)',
         nodeEnv: process.env.NODE_ENV || 'not set',
       },
       tables: results,
     })
+  })
+
+  // Test endpoint: simulate what the client does (locations + menu)
+  app.get('/test-flow', async (req, reply) => {
+    const results: Record<string, any> = {}
+
+    // 1. Test locations endpoint
+    try {
+      const locations = await prisma.location.findMany({
+        where: { isActive: true },
+        select: { id: true, slug: true, name: true },
+        orderBy: { id: 'asc' },
+      })
+      results.locations = { ok: true, count: locations.length, slugs: locations.map(l => l.slug) }
+    } catch (err: any) {
+      results.locations = { ok: false, error: err.message }
+    }
+
+    // 2. Test menu for first location
+    try {
+      const firstLoc = await prisma.location.findFirst({ where: { isActive: true } })
+      if (firstLoc) {
+        const products = await prisma.product.findMany({
+          where: { locationId: firstLoc.id, isAvailable: true },
+          take: 3,
+          select: { id: true, name: true, price: true, category: true },
+        })
+        results.menu = { ok: true, locationSlug: firstLoc.slug, sampleProducts: products.length, sample: products }
+      } else {
+        results.menu = { ok: false, error: 'No active location' }
+      }
+    } catch (err: any) {
+      results.menu = { ok: false, error: err.message }
+    }
+
+    // 3. Test Redis cache
+    try {
+      await redis.set('health-test', 'ok', 'EX', 10)
+      const val = await redis.get('health-test')
+      results.redisReadWrite = { ok: val === 'ok' }
+    } catch (err: any) {
+      results.redisReadWrite = { ok: false, error: err.message }
+    }
+
+    // 4. Test BOT_TOKEN is valid format
+    const botToken = process.env.BOT_TOKEN || ''
+    results.botToken = {
+      present: !!botToken,
+      format: /^\d+:[A-Za-z0-9_-]+$/.test(botToken) ? 'valid' : 'invalid',
+      length: botToken.length,
+    }
+
+    return reply.send({ success: true, timestamp: new Date().toISOString(), results })
   })
 }

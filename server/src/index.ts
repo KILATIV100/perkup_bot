@@ -27,31 +27,33 @@ import { syncAllLocations } from './services/poster'
 const app = Fastify({ logger: { level: 'info' }, ignoreTrailingSlash: true, ignoreDuplicateSlashes: true })
 
 async function bootstrap() {
+  // Connect to databases BEFORE starting server
+  try { await prisma.$connect(); console.log('PostgreSQL connected') } catch (err) { console.error('PostgreSQL error:', (err as Error).message) }
+  try { await redis.connect(); console.log('Redis connected') } catch (err) { console.error('Redis error:', (err as Error).message) }
+
   await app.register(cors, {
     origin: (origin, cb) => {
       const allowed = [
-        process.env.CLIENT_URL || 'https://perkup.com.ua',
-        process.env.ADMIN_URL || 'https://admin.perkup.com.ua',
-        'http://localhost:5173',
-        'http://localhost:3001',
-      ]
-      // Also accept www variants and http variants of client/admin URLs
-      const extra = [
+        'https://perkup.com.ua',
         'https://www.perkup.com.ua',
         'http://perkup.com.ua',
         'http://www.perkup.com.ua',
-      ]
-      const all = [...allowed, ...extra]
-      if (!origin || all.includes(origin)) {
+        process.env.CLIENT_URL,
+        process.env.ADMIN_URL || 'https://admin.perkup.com.ua',
+        'http://localhost:5173',
+        'http://localhost:3001',
+      ].filter(Boolean) as string[]
+      if (!origin || allowed.includes(origin)) {
         cb(null, true)
       } else {
+        console.warn('[CORS] Blocked origin:', origin)
         cb(null, false)
       }
     },
     credentials: true,
   })
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'fallback-secret', sign: { expiresIn: '7d' } })
-  await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute', redis, keyGenerator: (req) => (req as any).user?.id?.toString() || req.ip })
+  await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute', redis, skipOnError: true, keyGenerator: (req) => (req as any).user?.id?.toString() || req.ip })
   await app.register(healthRoutes,        { prefix: '/health' })
   await app.register(authRoutes,          { prefix: '/api/auth' })
   await app.register(locationRoutes,      { prefix: '/api/locations' })
@@ -76,8 +78,6 @@ async function bootstrap() {
   const port = parseInt(process.env.PORT || '3000')
   await app.listen({ port, host: '0.0.0.0' })
   console.log('PerkUp Server running on port ' + port)
-  try { await prisma.$connect(); console.log('PostgreSQL connected') } catch (err) { console.error('PostgreSQL error:', (err as Error).message) }
-  try { await redis.ping(); console.log('Redis connected') } catch (err) { console.error('Redis error:', (err as Error).message) }
   try {
     startPosterSyncWorker()
     await schedulePosterSync()
