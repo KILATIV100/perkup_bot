@@ -3,7 +3,7 @@ builder = "nixpacks"
 buildCommand = "npm install && npm run build"
 
 [deploy]
-startCommand = "node dist/index.js"
+startCommand = "npx prisma db execute --file prisma/migrations/20260410084000_add_missing_columns/migration.sql && node dist/index.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/health"
