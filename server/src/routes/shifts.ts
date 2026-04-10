@@ -8,7 +8,7 @@ const startSchema = z.object({
 })
 
 export default async function shiftsRoutes(app: FastifyInstance) {
-  app.post('/start', { preHandler: await requireBarista }, async (req, reply) => {
+  app.post('/start', { preHandler: requireBarista }, async (req, reply) => {
     const parsed = startSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ success: false, error: parsed.error.flatten() })
 
@@ -28,7 +28,7 @@ export default async function shiftsRoutes(app: FastifyInstance) {
     return reply.status(201).send({ success: true, shift })
   })
 
-  app.post('/end', { preHandler: await requireBarista }, async (req, reply) => {
+  app.post('/end', { preHandler: requireBarista }, async (req, reply) => {
     const active = await prisma.shift.findFirst({ where: { userId: req.user.id, endedAt: null } })
     if (!active) return reply.status(404).send({ success: false, error: 'No active shift' })
 
@@ -40,7 +40,7 @@ export default async function shiftsRoutes(app: FastifyInstance) {
     return reply.send({ success: true, shift })
   })
 
-  app.get('/active', { preHandler: await requireBarista }, async (req, reply) => {
+  app.get('/active', { preHandler: requireBarista }, async (req, reply) => {
     const shift = await prisma.shift.findFirst({
       where: { userId: req.user.id, endedAt: null },
       include: { location: { select: { id: true, name: true, slug: true } } },

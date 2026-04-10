@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
-import { redis } from '../lib/redis'
+import { redis, redisCache } from '../lib/redis'
 
 export default async function healthRoutes(app: FastifyInstance) {
   app.get('/', async (req, reply) => {
@@ -119,13 +119,20 @@ export default async function healthRoutes(app: FastifyInstance) {
       results.menu = { ok: false, error: err.message }
     }
 
-    // 3. Test Redis cache
+    // 3. Test Redis cache (both instances)
     try {
       await redis.set('health-test', 'ok', 'EX', 10)
       const val = await redis.get('health-test')
-      results.redisReadWrite = { ok: val === 'ok' }
+      results.redisBullMQ = { ok: val === 'ok' }
     } catch (err: any) {
-      results.redisReadWrite = { ok: false, error: err.message }
+      results.redisBullMQ = { ok: false, error: err.message }
+    }
+    try {
+      await redisCache.set('health-test-cache', 'ok', 'EX', 10)
+      const val = await redisCache.get('health-test-cache')
+      results.redisCache = { ok: val === 'ok' }
+    } catch (err: any) {
+      results.redisCache = { ok: false, error: err.message }
     }
 
     // 4. Test BOT_TOKEN is valid format

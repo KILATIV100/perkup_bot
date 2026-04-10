@@ -30,6 +30,7 @@ async function bootstrap() {
   // Connect to databases BEFORE starting server
   try { await prisma.$connect(); console.log('PostgreSQL connected') } catch (err) { console.error('PostgreSQL error:', (err as Error).message) }
   try { await redis.connect(); console.log('Redis connected') } catch (err) { console.error('Redis error:', (err as Error).message) }
+  try { const { redisCache } = await import('./lib/redis'); await redisCache.connect(); console.log('RedisCache connected') } catch (err) { console.error('RedisCache error:', (err as Error).message) }
 
   await app.register(cors, {
     origin: (origin, cb) => {

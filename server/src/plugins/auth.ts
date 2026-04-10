@@ -12,13 +12,15 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
   try {
     await req.jwtVerify()
   } catch {
-    return reply.status(401).send({ success: false, error: 'Unauthorized' })
+    reply.status(401).send({ success: false, error: 'Unauthorized' })
+    return
   }
 }
 
-export async function requireRole(...roles: string[]) {
+export function requireRole(...roles: string[]) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     await authenticate(req, reply)
+    if (reply.sent) return
     if (!roles.includes(req.user.role)) {
       return reply.status(403).send({ success: false, error: 'Forbidden' })
     }

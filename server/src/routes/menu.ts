@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { redis } from '../lib/redis'; // Використовуємо redis замість redisCache
+import { redisCache as redis } from '../lib/redis';
 import { getLocationProfile } from '../lib/locationProfile';
 import { buildMenuQrSvg, buildPrintableMenuHtml, groupProductsByCategory, sortMenuProducts } from '../lib/menuPresentation';
 
