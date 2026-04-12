@@ -24,13 +24,13 @@ const LOCATION_PROFILE_MAP: Record<string, Omit<BaseLocationProfile, 'remoteOrde
     paymentFlow: 'CASHIER_ONLY',
   },
   krona: {
-    format: 'TO_GO',
+    format: 'FAMILY_CAFE',
     posSystem: 'POSTER',
     menuManagement: 'POSTER_SYNC',
     paymentFlow: 'CASHIER_ONLY',
   },
   pryozerny: {
-    format: 'FAMILY_CAFE',
+    format: 'TO_GO',
     posSystem: 'POSTER',
     menuManagement: 'POSTER_SYNC',
     paymentFlow: 'CASHIER_ONLY',
