@@ -55,6 +55,11 @@ function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function hourKey(): string {
+  const d = new Date()
+  return `${d.toISOString().slice(0, 10)}:${d.getHours()}`
+}
+
 export default async function aiRoutes(app: FastifyInstance) {
   async function optionalAuth(req: any, _reply: any) {
     try { await req.jwtVerify() } catch { /* guest */ }
@@ -81,7 +86,7 @@ export default async function aiRoutes(app: FastifyInstance) {
   // GET /api/ai/weather-menu?locationSlug=xxx
   app.get('/weather-menu', async (req, reply) => {
     const { locationSlug } = req.query as { locationSlug?: string }
-    const cacheKey = 'ai:weather-menu:' + todayKey() + ':' + (locationSlug || 'default')
+    const cacheKey = 'ai:weather-menu:' + hourKey() + ':' + (locationSlug || 'default')
     const cached = await redisCache.get(cacheKey)
     if (cached) return reply.send({ success: true, ...JSON.parse(cached) })
 
@@ -126,7 +131,8 @@ Write in Ukrainian. Be warm and weather-aware. No lists, no bullet points.`
 
   // GET /api/ai/card-of-day
   app.get('/card-of-day', async (_req, reply) => {
-    const cacheKey = 'ai:card-of-day:' + todayKey()
+    const slot = Math.floor(new Date().getHours() / 6)
+    const cacheKey = 'ai:card-of-day:' + todayKey() + ':slot' + slot
     const cached = await redisCache.get(cacheKey)
     if (cached) return reply.send({ success: true, ...JSON.parse(cached) })
 
