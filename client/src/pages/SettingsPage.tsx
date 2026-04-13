@@ -133,7 +133,7 @@ export default function SettingsPage() {
         <div className="space-y-2 pb-2 border-b border-gray-100 mb-2">
           <label className="text-sm text-gray-500">{t('settings.phone')}</label>
           <div className="flex gap-2">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" placeholder="+380501234567" inputMode="tel" />
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white text-gray-900" placeholder="+380501234567" inputMode="tel" />
             <button onClick={handlePhoneSave} disabled={saving} className="px-4 py-2 rounded-xl bg-coffee-600 text-white text-sm disabled:opacity-60">
               {t('common.save')}
             </button>

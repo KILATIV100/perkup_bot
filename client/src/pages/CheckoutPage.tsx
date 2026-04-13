@@ -65,7 +65,7 @@ export default function CheckoutPage() {
           <input
             value={customerPhone}
             onChange={(e) => setCustomerPhone(e.target.value)}
-            className="mt-1 w-full border rounded-xl px-3 py-2"
+            className="mt-1 w-full border rounded-xl px-3 py-2 bg-white text-gray-900"
             placeholder={t('checkout.phonePlaceholder')}
             inputMode="tel"
           />
@@ -75,7 +75,7 @@ export default function CheckoutPage() {
 
       <div>
         <label className="text-sm font-medium">{t('checkout.comment')}</label>
-        <textarea value={comment} onChange={(e) => setComment(e.target.value)} className="mt-1 w-full border rounded-xl px-3 py-2" rows={3} placeholder={t('checkout.commentPlaceholder')} />
+        <textarea value={comment} onChange={(e) => setComment(e.target.value)} className="mt-1 w-full border rounded-xl px-3 py-2 bg-white text-gray-900" rows={3} placeholder={t('checkout.commentPlaceholder')} />
       </div>
 
       <div>

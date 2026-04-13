@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
-import { loyaltyApi } from '../lib/api'
+import { loyaltyApi, ordersApi } from '../lib/api'
 import TestPanel from '../components/TestPanel'
 import { useT } from '../lib/i18n'
 
@@ -28,6 +28,7 @@ export default function ProfilePage() {
   const [referralLink, setReferralLink] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [orders, setOrders] = useState<any[]>([])
 
   const loadStats = useCallback(async () => {
     try {
@@ -48,6 +49,10 @@ export default function ProfilePage() {
   }, [])
 
   useEffect(() => { loadStats(); loadReferral() }, [loadStats, loadReferral])
+
+  useEffect(() => {
+    ordersApi.getAll().then(r => setOrders(r.data.orders?.slice(0, 3) || [])).catch(() => {})
+  }, [])
 
   const level = getLevelInfo(user?.level || 'BRONZE')
   const next = getNextLevel(user?.level || 'BRONZE')
@@ -125,6 +130,26 @@ export default function ProfilePage() {
           <div className="text-xs text-gray-500 mt-1">{t('profile.vouchers')}</div>
         </div>
       </div>
+
+      {/* Recent orders */}
+      {orders.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <div className="px-4 py-3 border-b border-gray-100 font-semibold text-gray-700">Останні замовлення</div>
+          {orders.map((o: any) => (
+            <div key={o.id} onClick={() => navigate('/orders/' + o.id)}
+              className="flex justify-between items-center px-4 py-3 border-b border-gray-50 last:border-0 active:bg-gray-50 cursor-pointer">
+              <div>
+                <div className="text-sm font-medium text-gray-900">Замовлення #{o.id}</div>
+                <div className="text-xs text-gray-400">{o.location?.name} · {o.items?.length} позиції</div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold text-coffee-700">{Number(o.total).toFixed(0)} грн</div>
+                <div className="text-xs text-gray-400">{o.status}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Menu items */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

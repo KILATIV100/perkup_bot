@@ -243,13 +243,13 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     if (user.telegramId) {
       const userMsg = [
-        'ÐÐ°Ð¼Ð¾Ð²Ð»ÐµÐ½Ð½Ñ #' + order.id + ' ÑÑÐ²Ð¾ÑÐµÐ½Ð¾!',
+        `✅ Замовлення #${order.id} створено!`,
         '',
-        'QR-ÐºÐ¾Ð´',
-        '`' + qrCode + '`',
+        `📍 ${location.name}`,
+        posterOrderId ? `✔️ Передзамовлення надіслано до каси` : '',
+        `💳 Сума до оплати: ${finalTotal} грн`,
         '',
-        posterOrderId ? 'ÐÑÐµÐ·Ð°Ð¼Ð¾Ð²Ð»ÐµÐ½Ð½Ñ Ð²Ð¶Ðµ Ð½Ð°Ð¿ÑÐ°Ð²Ð»ÐµÐ½Ð¾ Ð´Ð¾ ÐºÐ°ÑÐ¸.' : '',
-        'Ð¡ÑÐ¼Ð° Ð¿ÑÐ¸ Ð¾ô¸Ð¿Ð»Ð°ÑÑÑ ÐºÐ°ÑÐ¸ÑÑ: ' + finalTotal + ' Ð³ÑÐ½',
+        comment ? `💬 Коментар: ${comment}` : '',
       ].filter(Boolean).join('\n')
       await tgSend(String(user.telegramId), userMsg)
     }
