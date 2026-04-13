@@ -29,12 +29,12 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
     }
 
     if (payload.object === 'incoming_order' && payload.action === 'closed') {
-      const posterOrderId = String(payload.data?.incoming_order_id ?? '')
-      if (!posterOrderId) return reply.send({ success: true })
+      const posterOrderId = parseInt(String(payload.data?.incoming_order_id ?? ''), 10)
+      if (!posterOrderId || isNaN(posterOrderId)) return reply.send({ success: true })
 
       const order = await prisma.order.findFirst({
         where: { posterOrderId, locationId: location.id },
-        include: { user: { select: { points: true } } },
+        include: { user: true },
       })
 
       if (order && order.status !== 'COMPLETED') {

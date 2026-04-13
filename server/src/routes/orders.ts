@@ -168,7 +168,7 @@ export default async function orderRoutes(app: FastifyInstance) {
     })
 
     let finalStatus = order.status
-    let posterOrderId: string | null = null
+    let posterOrderId: number | null = null
 
     if (pointsUsed > 0) {
       await prisma.user.update({ where: { id: user.id }, data: { points: { decrement: discount } } })
@@ -204,7 +204,7 @@ export default async function orderRoutes(app: FastifyInstance) {
           products: posterProducts,
         })
 
-        posterOrderId = posterOrder.incomingOrderId
+        posterOrderId = parseInt(posterOrder.incomingOrderId, 10)
         finalStatus = 'SENT_TO_POS'
 
         await prisma.$executeRawUnsafe(
