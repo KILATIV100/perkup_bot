@@ -225,7 +225,7 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     await redis.del('menu:' + location.slug)
 
-    const itemLines = orderItems.map((i: any) => '- ' + i.name + ' x' + i.quantity + ' = ' + (i.price * i.quantity) + ' uah').join('\n')
+    const itemLines = orderItems.map((i: any) => '- ' + i.name + ' x' + i.quantity + ' = ' + (Number(i.price) * i.quantity) + ' uah').join('\n')
     const msg = [
       'New order #' + order.id, location.name, itemLines,
       discount > 0 ? 'Discount: -' + discount + ' uah' : '',
