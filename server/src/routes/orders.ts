@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import crypto from 'crypto'
 import { prisma } from '../lib/prisma'
+import { Prisma } from '@prisma/client'
 import { redis } from '../lib/redis'
 import { getLocationProfile } from '../lib/locationProfile'
 import { normalizePhone } from '../lib/phone'
@@ -111,7 +112,7 @@ export default async function orderRoutes(app: FastifyInstance) {
         }
         const price = Number(p.price)
         total += price * item.quantity
-        orderItems.push({ productId: p.id, name: p.name, price, quantity: item.quantity, modifiers: item.modifiers || null })
+        orderItems.push({ productId: p.id, name: p.name, price: new Prisma.Decimal(price), quantity: item.quantity, modifiers: (item.modifiers && Object.keys(item.modifiers).length > 0) ? item.modifiers : null })
         if (location.hasPoster) {
           if (!p.posterProductId || Number.isNaN(Number(p.posterProductId))) {
             return reply.status(400).send({ success: false, error: `Product ${p.name} is not linked to Poster` })
@@ -119,7 +120,7 @@ export default async function orderRoutes(app: FastifyInstance) {
           posterProducts.push({ product_id: Number(p.posterProductId), count: item.quantity })
           if (item.modifiers && Object.keys(item.modifiers).length > 0) {
             const mods = Object.entries(item.modifiers).map(([key, value]) => `${key}: ${value}`).join(', ')
-            modifierComments.push(`${p.name} — ${mods}`)
+            modifierComments.push(`${p.name} â ${mods}`)
           }
         }
       } else if (item.bundleId) {
@@ -132,7 +133,7 @@ export default async function orderRoutes(app: FastifyInstance) {
         }
         const price = Number(b.price)
         total += price * item.quantity
-        orderItems.push({ bundleId: b.id, name: b.name, price, quantity: item.quantity, modifiers: null })
+        orderItems.push({ bundleId: b.id, name: b.name, price: new Prisma.Decimal(price), quantity: item.quantity, modifiers: null })
       }
     }
 
@@ -155,8 +156,8 @@ export default async function orderRoutes(app: FastifyInstance) {
         locationId,
         shiftId: activeShift?.id,
         status: activeShift ? 'PENDING' : 'UNASSIGNED',
-        total: finalTotal,
-        discount,
+        total: new Prisma.Decimal(finalTotal),
+        discount: new Prisma.Decimal(discount),
         paymentMethod: 'cashier',
         comment: comment || null,
         pointsUsed,
@@ -231,7 +232,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       'Total: ' + finalTotal + ' uah',
       'Payment: at cashier / POS',
       posterOrderId ? 'Poster incoming order: ' + posterOrderId : '',
-      activeShift ? 'Shift: #' + activeShift.id : 'Shift: missing, requires assignment',
+      activeShift ? 'Shift: #' + activeShift.id : 'Shift: missing',
       comment ? 'Note: ' + comment : '',
       'QR: ' + qrCode,
     ].filter(Boolean).join('\n')
@@ -240,17 +241,14 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     if (user.telegramId) {
       const userMsg = [
-        'Order #' + order.id + ' created!',
+        'ÐÐ°Ð¼Ð¾Ð²Ð»ÐµÐ½Ð½Ñ #' + order.id + ' ÑÑÐ²Ð¾ÑÐµÐ½Ð¾!',
         '',
-        'QR Code:',
+        'QR-ÐºÐ¾Ð´',
         '`' + qrCode + '`',
         '',
-        posterOrderId ? 'The preorder has already been sent to the POS of this coffee shop.' : '',
-        activeShift
-          ? 'Payment is made at the cashier with the barista of this location.'
-          : 'The order was created, but there is no active shift at the location yet. We notified the admin.',
-        'Total: ' + finalTotal + ' uah',
-      ].join('\n')
+        posterOrderId ? 'ÐÑÐµÐ·Ð°Ð¼Ð¾Ð²Ð»ÐµÐ½Ð½Ñ Ð²Ð¶Ðµ Ð½Ð°Ð¿ÑÐ°Ð²Ð»ÐµÐ½Ð¾ Ð´Ð¾ ÐºÐ°ÑÐ¸.' : '',
+        'Ð¡ÑÐ¼Ð° Ð¿ÑÐ¸ Ð¾ô¸Ð¿Ð»Ð°ÑÑÑ ÐºÐ°ÑÐ¸ÑÑ: ' + finalTotal + ' Ð³ÑÐ½',
+      ].filter(Boolean).join('\n')
       await tgSend(String(user.telegramId), userMsg)
     }
 
@@ -312,7 +310,6 @@ export default async function orderRoutes(app: FastifyInstance) {
         })
       }
     }
-
     return reply.send({ success: true })
   })
 
