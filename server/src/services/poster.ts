@@ -45,7 +45,7 @@ async function getPosterLocationConfig(locationSlug: string) {
 
 function getPosterServiceMode(location: { slug: string }): 1 | 2 | 3 {
   const profile = getLocationProfile(location)
-  if (profile.format === 'FAMILY_CAFE') return 1
+  if (profile.format === 'TO_GO') return 1
   return 2
 }
 

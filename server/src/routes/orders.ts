@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import crypto from 'crypto'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { Prisma } from '@prisma/client'
 import { redis } from '../lib/redis'
@@ -112,7 +113,11 @@ export default async function orderRoutes(app: FastifyInstance) {
         }
         const price = Number(p.price)
         total += price * item.quantity
+<<<<<<< Updated upstream
         orderItems.push({ productId: p.id, name: p.name, price: new Prisma.Decimal(price), quantity: item.quantity, modifiers: (item.modifiers && Object.keys(item.modifiers).length > 0) ? item.modifiers : null })
+=======
+        orderItems.push({ productId: p.id, name: p.name, price: new Prisma.Decimal(price), quantity: item.quantity, modifiers: item.modifiers || null })
+>>>>>>> Stashed changes
         if (location.hasPoster) {
           if (!p.posterProductId || Number.isNaN(Number(p.posterProductId))) {
             return reply.status(400).send({ success: false, error: `Product ${p.name} is not linked to Poster` })
