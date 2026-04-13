@@ -207,10 +207,12 @@ export default async function orderRoutes(app: FastifyInstance) {
         posterOrderId = posterOrder.incomingOrderId
         finalStatus = 'SENT_TO_POS'
 
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { posterOrderId, status: finalStatus },
-        })
+        await prisma.$executeRawUnsafe(
+          `UPDATE "Order" SET "posterOrderId" = $1, "status" = $2::"OrderStatus" WHERE "id" = $3`,
+          posterOrderId,
+          finalStatus,
+          order.id
+        )
       } catch (error) {
         if (pointsUsed > 0) {
           await prisma.user.update({ where: { id: user.id }, data: { points: { increment: discount } } })
