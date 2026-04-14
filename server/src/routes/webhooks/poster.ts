@@ -4,14 +4,13 @@ import { prisma } from '../../lib/prisma'
 import { awardCompletedOrderLoyalty } from '../../lib/orderRewards'
 
 export default async function posterWebhookRoutes(app: FastifyInstance) {
+
+  // Unified endpoint â determines location by account field in payload
   app.post('/', async (req, reply) => {
     const payload = req.body as any
-    
-    app.log.info({ payload: JSON.stringify(payload).slice(0, 500) }, 'Poster webhook received')
+    app.log.info({ obj: payload.object, action: payload.action, account: payload.account }, 'Poster webhook received')
 
-    // Determine location by account name (posterSubdomain)
     const accountName = payload.account || ''
-    
     if (!accountName) {
       app.log.warn('Poster webhook: no account in payload')
       return reply.send({ success: true })
@@ -22,18 +21,17 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
     })
 
     if (!location) {
-      app.log.warn({ accountName }, 'Poster webhook: location not found')
+      app.log.warn({ accountName }, 'Poster webhook: location not found by account')
       return reply.send({ success: true })
     }
 
-    // Verify signature if present
+    // Optional signature check â log only, don't reject
     const signature = req.headers['x-poster-hook-signature'] as string | undefined
     if (signature && location.posterToken) {
       const rawBody = JSON.stringify(payload)
       const expected = crypto.createHmac('md5', location.posterToken).update(rawBody).digest('hex')
       if (signature !== expected) {
-        app.log.warn({ locationId: location.id }, 'Invalid Poster webhook signature')
-        // Don't reject — just log warning, proceed anyway
+        app.log.warn({ locationId: location.id }, 'Poster webhook: invalid signature (proceeding anyway)')
       }
     }
 
@@ -52,7 +50,7 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
       }
 
       if (order.status !== 'COMPLETED') {
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: any) => {
           await tx.order.update({
             where: { id: order.id },
             data: { status: 'COMPLETED' },
@@ -71,8 +69,6 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
-  // Keep old route for backward compatibility  
-  app.post('/:locationId', async (req, reply) => {
-    return reply.send({ success: true })
-  })
+  // Legacy route â backward compatibility
+  app.post('/:locationId', async (_req, reply) => reply.send({ success: true }))
 }
