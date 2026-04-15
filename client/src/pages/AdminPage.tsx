@@ -835,7 +835,7 @@ function VouchersTab() {
             onChange={e => setCode(e.target.value.toUpperCase())}
             placeholder="Код ваучера (напр. A1B2C3)"
             maxLength={10}
-            className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-widest text-center uppercase"
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-widest text-center uppercase bg-white text-gray-800"
             onKeyDown={e => e.key === 'Enter' && lookup()}
           />
           <button
