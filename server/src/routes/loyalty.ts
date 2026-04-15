@@ -39,14 +39,14 @@ function getNextLevel(points: number): { name: string; required: number } | null
 }
 
 const WHEEL_PRIZES = [
-  { id: 'points20',  label: '+20 baliv',      emoji: '\u2B50', type: 'points',   value: 20,  weight: 20 },
-  { id: 'points10',  label: '+10 baliv',      emoji: '\u2B50', type: 'points',   value: 10,  weight: 17 },
-  { id: 'upgrade',   label: 'Apgrejd napoju', emoji: '\u2615', type: 'voucher',  value: 100, weight: 12 },
-  { id: 'discount',  label: '-10% znyzhka',   emoji: '\uD83D\uDD25', type: 'discount', value: 10, weight: 10 },
-  { id: 'sweet',     label: 'Solodoshchi',    emoji: '\uD83C\uDF70', type: 'voucher',  value: 100, weight: 8  },
-  { id: 'coffee',    label: 'Kava v podarok', emoji: '\u2615', type: 'voucher',  value: 100, weight: 5  },
-  { id: 'sticker',   label: 'Sticer PerkUp',  emoji: '\uD83C\uDF81', type: 'physical', value: 0, weight: 3  },
-  { id: 'nothing',   label: 'Ne poschastylo', emoji: '\uD83D\uDE14', type: 'nothing',  value: 0,  weight: 25 },
+  { id: 'points20',  label: '+20 балів',       emoji: '⭐', type: 'points',   value: 20,  weight: 20 },
+  { id: 'points10',  label: '+10 балів',       emoji: '⭐', type: 'points',   value: 10,  weight: 17 },
+  { id: 'upgrade',   label: 'Апгрейд напою',   emoji: '☕', type: 'voucher',  value: 100, weight: 12 },
+  { id: 'discount',  label: '-10% знижка',      emoji: '🔥', type: 'discount', value: 10, weight: 10 },
+  { id: 'sweet',     label: 'Солодощі',         emoji: '🍰', type: 'voucher',  value: 100, weight: 8  },
+  { id: 'coffee',    label: 'Кава в подарунок', emoji: '☕', type: 'voucher',  value: 100, weight: 5  },
+  { id: 'sticker',   label: 'Стікер PerkUp',    emoji: '🎁', type: 'physical', value: 0, weight: 3  },
+  { id: 'nothing',   label: 'Не пощастило',     emoji: '😔', type: 'nothing',  value: 0,  weight: 25 },
 ]
 
 function spinWheel(): typeof WHEEL_PRIZES[0] {
@@ -144,7 +144,7 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
           idempotencyKey: 'spin-' + user.id + '-' + Date.now(),
         },
       })
-      await tgSend(String(user.telegramId), 'Narahovano ' + bonus + ' baliv za spin!')
+      await tgSend(String(user.telegramId), '⭐ Нараховано ' + bonus + ' балів за спін!')
 
     } else if (prize.type !== 'nothing') {
       voucherCode = crypto.randomBytes(3).toString('hex').toUpperCase()
@@ -157,7 +157,7 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
           expiresAt, isUsed: false,
         },
       })
-      await tgSend(String(user.telegramId), 'Priz: ' + prize.id + '. Kod: ' + voucherCode + '. Dijsnyj 7 dniv.')
+      await tgSend(String(user.telegramId), '🎉 Приз: ' + prize.label + '\nКод: ' + voucherCode + '\nДійсний 7 днів.')
     }
 
     return reply.send({
@@ -199,7 +199,7 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     await prisma.prizeVoucher.update({ where: { code }, data: { isUsed: true, usedAt: new Date() } })
 
     const user = await prisma.user.findUnique({ where: { id: voucher.userId } })
-    if (user) await tgSend(String(user.telegramId), 'Priz "' + voucher.prizeLabel + '" aktivovano!')
+    if (user) await tgSend(String(user.telegramId), '✅ Приз "' + voucher.prizeLabel + '" активовано!')
 
     return reply.send({ success: true, prize: voucher.prizeLabel, type: voucher.prizeType })
   })
