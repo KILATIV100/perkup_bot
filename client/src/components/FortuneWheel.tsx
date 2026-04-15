@@ -16,20 +16,18 @@ interface Props {
 }
 
 const COLORS = [
-  '#6b3a2a', '#c8973a', '#3d1c02', '#d9a84e',
-  '#6b3a2a', '#c8973a', '#3d1c02', '#d9a84e',
+  '#6b3a2a', '#e8a838', '#2d6a4f', '#d4574a',
+  '#5c4b9e', '#c8973a', '#1d7a8a', '#b85c38',
 ]
 
 export default function FortuneWheel({ prizes, spinning, targetIndex, onSpinEnd }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const angleRef = useRef(0)
   const spinningRef = useRef(false)
-  const velocityRef = useRef(0)
   const targetAngleRef = useRef<number | null>(null)
   const rafRef = useRef(0)
   const [size, setSize] = useState(300)
 
-  // Measure container
   useEffect(() => {
     const el = canvasRef.current?.parentElement
     if (!el) return
@@ -41,29 +39,45 @@ export default function FortuneWheel({ prizes, spinning, targetIndex, onSpinEnd 
     const S = size
     const cx = S / 2
     const cy = S / 2
-    const R = S / 2 - 8
+    const R = S / 2 - 10
     const n = prizes.length
     const arc = (2 * Math.PI) / n
 
     ctx.clearRect(0, 0, S, S)
 
-    // Shadow
+    // Outer ring shadow
     ctx.save()
-    ctx.shadowColor = 'rgba(0,0,0,0.15)'
-    ctx.shadowBlur = 16
+    ctx.shadowColor = 'rgba(0,0,0,0.25)'
+    ctx.shadowBlur = 20
     ctx.shadowOffsetY = 4
     ctx.beginPath()
-    ctx.arc(cx, cy, R, 0, Math.PI * 2)
-    ctx.fillStyle = '#fff'
+    ctx.arc(cx, cy, R + 6, 0, Math.PI * 2)
+    ctx.fillStyle = '#3d1c02'
     ctx.fill()
     ctx.restore()
+
+    // Outer decorative ring
+    ctx.beginPath()
+    ctx.arc(cx, cy, R + 6, 0, Math.PI * 2)
+    ctx.fillStyle = '#3d1c02'
+    ctx.fill()
+
+    // Gold dots on outer ring
+    for (let i = 0; i < n * 2; i++) {
+      const dotAngle = (i / (n * 2)) * Math.PI * 2
+      const dotX = cx + Math.cos(dotAngle) * (R + 3)
+      const dotY = cy + Math.sin(dotAngle) * (R + 3)
+      ctx.beginPath()
+      ctx.arc(dotX, dotY, 2, 0, Math.PI * 2)
+      ctx.fillStyle = '#c8973a'
+      ctx.fill()
+    }
 
     // Sectors
     for (let i = 0; i < n; i++) {
       const startAngle = angle + i * arc
       const endAngle = startAngle + arc
 
-      // Fill sector
       ctx.beginPath()
       ctx.moveTo(cx, cy)
       ctx.arc(cx, cy, R, startAngle, endAngle)
@@ -72,92 +86,92 @@ export default function FortuneWheel({ prizes, spinning, targetIndex, onSpinEnd 
       ctx.fill()
 
       // Sector border
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+      ctx.lineWidth = 1.5
       ctx.stroke()
 
-      // Text + emoji
+      // Emoji + Label
       ctx.save()
       ctx.translate(cx, cy)
       ctx.rotate(startAngle + arc / 2)
 
       // Emoji
-      ctx.font = `${Math.round(R * 0.16)}px Inter, sans-serif`
+      ctx.font = `${Math.round(R * 0.2)}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(prizes[i].emoji, R * 0.55, 0)
+      ctx.fillText(prizes[i].emoji, R * 0.65, 0)
 
-      // Label (rotated for readability)
-      ctx.rotate(0)
-      ctx.font = `bold ${Math.round(R * 0.085)}px Inter, sans-serif`
+      // Label
+      ctx.font = `bold ${Math.round(R * 0.095)}px sans-serif`
       ctx.fillStyle = '#fff'
       ctx.textAlign = 'center'
 
       const label = prizes[i].label
-      // Split label for multiline
       const words = label.split(' ')
       if (words.length > 1) {
-        ctx.fillText(words[0], R * 0.35, -6)
-        ctx.fillText(words.slice(1).join(' '), R * 0.35, 8)
+        ctx.fillText(words[0], R * 0.38, -7)
+        ctx.fillText(words.slice(1).join(' '), R * 0.38, 9)
       } else {
-        ctx.fillText(label, R * 0.35, 0)
+        ctx.fillText(label, R * 0.38, 0)
       }
 
       ctx.restore()
     }
 
-    // Center circle
+    // Inner circle — decorative ring
+    ctx.beginPath()
+    ctx.arc(cx, cy, R * 0.22, 0, Math.PI * 2)
+    ctx.fillStyle = '#3d1c02'
+    ctx.fill()
+
+    // Inner circle — center with gradient
     ctx.beginPath()
     ctx.arc(cx, cy, R * 0.18, 0, Math.PI * 2)
-    ctx.fillStyle = '#fdf6ed'
+    const grad = ctx.createRadialGradient(cx, cy - 4, 0, cx, cy, R * 0.18)
+    grad.addColorStop(0, '#fdf6ed')
+    grad.addColorStop(1, '#e8d5b8')
+    ctx.fillStyle = grad
     ctx.fill()
     ctx.strokeStyle = '#c8973a'
     ctx.lineWidth = 3
     ctx.stroke()
 
-    // Center text
+    // Center icon
     ctx.fillStyle = '#6b3a2a'
-    ctx.font = `bold ${Math.round(R * 0.1)}px Inter, sans-serif`
+    ctx.font = `bold ${Math.round(R * 0.11)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('SPIN', cx, cy)
+    ctx.fillText('☕', cx, cy - 2)
 
-    // Pointer (triangle at top)
-    const pSize = 18
+    // Pointer triangle at top
+    const pW = 22
+    const pH = 26
     ctx.beginPath()
-    ctx.moveTo(cx, 2)
-    ctx.lineTo(cx - pSize / 2, pSize + 4)
-    ctx.lineTo(cx + pSize / 2, pSize + 4)
+    ctx.moveTo(cx, 0)
+    ctx.lineTo(cx - pW / 2, pH)
+    ctx.lineTo(cx + pW / 2, pH)
     ctx.closePath()
     ctx.fillStyle = '#c8973a'
     ctx.fill()
-    ctx.strokeStyle = '#6b3a2a'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = '#3d1c02'
+    ctx.lineWidth = 2.5
     ctx.stroke()
+
   }, [prizes, size])
 
-  // Start spin animation
+  // Start spin
   useEffect(() => {
     if (!spinning || targetIndex === null || spinningRef.current) return
     spinningRef.current = true
 
     const n = prizes.length
     const arc = (2 * Math.PI) / n
-
-    // We want the pointer (at top = -π/2) to land in the middle of targetIndex sector
-    // Sector i center angle: angle + i*arc + arc/2
-    // Pointer is at -π/2 (top)
-    // We need: angle + targetIndex*arc + arc/2 = -π/2 (mod 2π)
-    // angle = -π/2 - targetIndex*arc - arc/2
-
-    const fullSpins = 5 + Math.floor(Math.random() * 3) // 5-7 full rotations
+    const fullSpins = 5 + Math.floor(Math.random() * 3)
     const targetSectorAngle = -Math.PI / 2 - targetIndex * arc - arc / 2
-    // Add randomness within sector (±30% of arc)
     const jitter = (Math.random() - 0.5) * arc * 0.5
     const finalAngle = targetSectorAngle + jitter - fullSpins * 2 * Math.PI
 
     targetAngleRef.current = finalAngle
-    velocityRef.current = 0
   }, [spinning, targetIndex, prizes])
 
   // Animation loop
@@ -170,11 +184,9 @@ export default function FortuneWheel({ prizes, spinning, targetIndex, onSpinEnd 
       if (spinningRef.current && targetAngleRef.current !== null) {
         const target = targetAngleRef.current
         const diff = target - angleRef.current
-        // Easing: move 4% of remaining distance each frame
         const speed = diff * 0.04
         angleRef.current += speed
 
-        // Stop when very close
         if (Math.abs(diff) < 0.001) {
           angleRef.current = target
           spinningRef.current = false
