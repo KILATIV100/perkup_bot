@@ -12,7 +12,6 @@ import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminPage from './pages/AdminPage'
-import VendingAdminPage from './pages/VendingAdminPage'
 import LoginPage from './pages/LoginPage'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
@@ -50,7 +49,6 @@ export default function App() {
           <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <LoginPage />} />
           <Route path="/settings" element={isAuthenticated ? <SettingsPage /> : <LoginPage />} />
           <Route path="/admin" element={isAuthenticated ? <AdminPage /> : <LoginPage />} />
-          <Route path="/admin/vending" element={isAuthenticated ? <VendingAdminPage /> : <LoginPage />} />
           <Route path="/cart" element={isAuthenticated ? <CartPage /> : <LoginPage />} />
           <Route path="/checkout" element={isAuthenticated ? <CheckoutPage /> : <LoginPage />} />
           <Route path="/orders/:id" element={isAuthenticated ? <OrderStatusPage /> : <LoginPage />} />
