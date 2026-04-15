@@ -69,6 +69,8 @@ export const loyaltyApi = {
   redeem: () => api.post('/api/loyalty/redeem'),
   getTransactions: () => api.get('/api/loyalty/transactions'),
   getReferralLink: () => api.get('/api/loyalty/referral'),
+  lookupVoucher: (code: string) => api.get(`/api/loyalty/voucher/${encodeURIComponent(code.toUpperCase())}`),
+  redeemVoucher: (code: string) => api.post(`/api/loyalty/redeem/${encodeURIComponent(code.toUpperCase())}`),
 }
 
 export const mediaUrl = (fileId: string) => `${BASE_URL}/api/media/${fileId}`
