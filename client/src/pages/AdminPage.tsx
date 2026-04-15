@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
-import { adminApi } from '../lib/api'
+import { adminApi, loyaltyApi } from '../lib/api'
 
-type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations'
+type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations' | 'vouchers'
 
 const ROLE_COLORS: Record<string, string> = {
   USER: 'bg-gray-100 text-gray-700',
@@ -47,9 +47,10 @@ const MENU_MANAGEMENT_LABELS: Record<string, string> = {
 export default function AdminPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const [tab, setTab] = useState<Tab>('dashboard')
+  const isBarista = user?.role === 'BARISTA'
+  const [tab, setTab] = useState<Tab>(isBarista ? 'vouchers' : 'dashboard')
 
-  if (!user || !['ADMIN', 'OWNER'].includes(user.role)) {
+  if (!user || !['BARISTA', 'ADMIN', 'OWNER'].includes(user.role)) {
     return (
       <div className="p-4 text-center">
         <p className="text-red-600 font-semibold">⛔ Доступ заборонено</p>
@@ -58,19 +59,22 @@ export default function AdminPage() {
     )
   }
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'dashboard', label: 'Дашборд', icon: '📊' },
-    { id: 'orders', label: 'Замовлення', icon: '📋' },
-    { id: 'users', label: 'Юзери', icon: '👥' },
-    { id: 'menu', label: 'Меню', icon: '🍽️' },
-    { id: 'locations', label: 'Локації', icon: '📍' },
-  ]
+  const tabs: { id: Tab; label: string; icon: string }[] = isBarista
+    ? [{ id: 'vouchers', label: 'Ваучери', icon: '🎟️' }]
+    : [
+        { id: 'dashboard', label: 'Дашборд', icon: '📊' },
+        { id: 'orders', label: 'Замовлення', icon: '📋' },
+        { id: 'users', label: 'Юзери', icon: '👥' },
+        { id: 'menu', label: 'Меню', icon: '🍽️' },
+        { id: 'locations', label: 'Локації', icon: '📍' },
+        { id: 'vouchers', label: 'Ваучери', icon: '🎟️' },
+      ]
 
   return (
     <div className="p-4 pb-24 space-y-4">
       <div className="flex items-center gap-3">
         <button onClick={() => navigate('/profile')} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-gray-100 shadow-sm active:scale-95 transition-transform">←</button>
-        <h1 className="text-2xl font-bold text-coffee-800">Адмін панель</h1>
+        <h1 className="text-2xl font-bold text-coffee-800">{isBarista ? 'Панель бариста' : 'Адмін панель'}</h1>
         <span className={`ml-auto px-2 py-0.5 rounded-full text-xs font-semibold ${ROLE_COLORS[user.role]}`}>{user.role}</span>
       </div>
 
@@ -88,6 +92,7 @@ export default function AdminPage() {
       {tab === 'orders' && <OrdersTab />}
       {tab === 'menu' && <MenuTab />}
       {tab === 'locations' && <LocationsTab />}
+      {tab === 'vouchers' && <VouchersTab />}
     </div>
   )
 }
@@ -763,6 +768,139 @@ function MenuTab() {
         ) : (
           <div className="text-sm text-gray-500">
             Для локального меню синхронізація не потрібна. Редагуй позиції та ціни вручну в списку вище.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── VOUCHERS (barista/admin) ────────────────────────────────────
+function VouchersTab() {
+  const [code, setCode] = useState('')
+  const [voucher, setVoucher] = useState<any>(null)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [redeeming, setRedeeming] = useState(false)
+
+  const lookup = async () => {
+    const trimmed = code.trim().toUpperCase()
+    if (!trimmed) return
+    setLoading(true)
+    setError('')
+    setSuccess('')
+    setVoucher(null)
+    try {
+      const res = await loyaltyApi.lookupVoucher(trimmed)
+      setVoucher(res.data.voucher)
+    } catch (e: any) {
+      const msg = e.response?.data?.error || 'Помилка пошуку'
+      setError(msg)
+      if (e.response?.data?.voucher) setVoucher(e.response.data.voucher)
+    }
+    setLoading(false)
+  }
+
+  const redeem = async () => {
+    const trimmed = code.trim().toUpperCase()
+    if (!trimmed) return
+    setRedeeming(true)
+    setError('')
+    setSuccess('')
+    try {
+      const res = await loyaltyApi.redeemVoucher(trimmed)
+      setSuccess(res.data.message || 'Ваучер списано!')
+      setVoucher(null)
+      setCode('')
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Помилка списання')
+    }
+    setRedeeming(false)
+  }
+
+  const PRIZE_EMOJI: Record<string, string> = {
+    voucher: '🎫', discount: '🔥', points: '⭐', physical: '🎁', nothing: '😔',
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+        <h3 className="font-semibold text-gray-700">🎟️ Списання ваучера</h3>
+        <p className="text-xs text-gray-400">Введіть код ваучера клієнта для перевірки та списання</p>
+
+        <div className="flex gap-2">
+          <input
+            value={code}
+            onChange={e => setCode(e.target.value.toUpperCase())}
+            placeholder="Код ваучера (напр. A1B2C3)"
+            maxLength={10}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-widest text-center uppercase"
+            onKeyDown={e => e.key === 'Enter' && lookup()}
+          />
+          <button
+            onClick={lookup}
+            disabled={loading || !code.trim()}
+            className="px-4 py-2.5 rounded-xl bg-coffee-600 text-white text-sm font-semibold disabled:opacity-50 active:scale-95 transition-transform"
+          >
+            {loading ? '...' : '🔍'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            ❌ {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+            ✅ {success}
+          </div>
+        )}
+
+        {voucher && (
+          <div className="rounded-2xl bg-gradient-to-br from-coffee-50 to-amber-50 border border-coffee-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-2xl">{PRIZE_EMOJI[voucher.prizeType] || '🎫'}</span>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                voucher.isUsed ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+              }`}>
+                {voucher.isUsed ? 'Використано' : 'Активний'}
+              </span>
+            </div>
+
+            <div>
+              <div className="text-lg font-bold text-gray-800">{voucher.prizeLabel}</div>
+              <div className="text-xs text-gray-500 font-mono mt-0.5">Код: {voucher.code}</div>
+            </div>
+
+            {voucher.user && (
+              <div className="rounded-xl bg-white/60 p-3 space-y-1 text-sm">
+                <div className="text-gray-700">
+                  👤 {voucher.user.firstName} {voucher.user.lastName || ''}
+                </div>
+                {voucher.user.phone && (
+                  <div className="text-gray-500 text-xs">📱 {voucher.user.phone}</div>
+                )}
+                <div className="text-gray-500 text-xs">⭐ {voucher.user.points} балів</div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-xs text-gray-500">
+              <span>Створено: {new Date(voucher.createdAt).toLocaleString('uk')}</span>
+              <span>До: {new Date(voucher.expiresAt).toLocaleDateString('uk')}</span>
+            </div>
+
+            {!voucher.isUsed && voucher.expiresAt > new Date().toISOString() && (
+              <button
+                onClick={redeem}
+                disabled={redeeming}
+                className="w-full py-3 rounded-xl bg-green-600 text-white font-bold text-sm active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {redeeming ? 'Списуємо...' : '✅ Списати ваучер'}
+              </button>
+            )}
           </div>
         )}
       </div>
