@@ -39,8 +39,11 @@ export default function Header() {
       const locs = res.data.locations
       setLocations(locs)
 
-      // Set first open location as default if none selected
-      if (!activeLocation) {
+      // Update activeLocation with fresh data from API, or set default
+      if (activeLocation) {
+        const fresh = locs.find((l: any) => l.id === activeLocation.id)
+        if (fresh) setActiveLocation(fresh)
+      } else {
         const open = locs.find((l: any) => l.isOpen) || locs[0]
         if (open) setActiveLocation(open)
       }
