@@ -63,3 +63,13 @@ body {
   backdrop-filter: blur(4px);
   background: rgba(0, 0, 0, 0.5);
 }
+
+/* Fix input text visibility in Telegram Mini App */
+input, select, textarea {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827;
+}
+input::placeholder, textarea::placeholder {
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af;
+}
