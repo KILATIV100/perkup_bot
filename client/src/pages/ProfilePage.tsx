@@ -51,7 +51,7 @@ export default function ProfilePage() {
   useEffect(() => { loadStats(); loadReferral() }, [loadStats, loadReferral])
 
   useEffect(() => {
-    ordersApi.getAll().then(r => setOrders(r.data.orders?.slice(0, 3) || [])).catch(() => {})
+    ordersApi.getMyOrders().then(r => setOrders(r.data.orders?.slice(0, 3) || [])).catch(() => {})
   }, [])
 
   const level = getLevelInfo(user?.level || 'BRONZE')
