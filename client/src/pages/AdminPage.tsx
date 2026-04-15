@@ -118,14 +118,28 @@ function DashboardTab() {
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {cards.map(c => (
-        <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
-          <div className="text-2xl mb-1">{c.icon}</div>
-          <div className="text-2xl font-bold text-gray-800">{c.value}</div>
-          <div className="text-xs text-gray-500 mt-1">{c.label}</div>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        {cards.map(c => (
+          <div key={c.label} className={`rounded-2xl border p-4 ${c.color}`}>
+            <div className="text-2xl mb-1">{c.icon}</div>
+            <div className="text-2xl font-bold text-gray-800">{c.value}</div>
+            <div className="text-xs text-gray-500 mt-1">{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <a href="/admin/vending"
+        className="block rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm active:scale-[0.98] transition-transform">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🤖</span>
+          <div>
+            <div className="font-bold text-gray-800">Mark Mall • Автомат</div>
+            <div className="text-xs text-gray-500 mt-0.5">Керування меню автомату</div>
+          </div>
+          <span className="ml-auto text-gray-400">→</span>
         </div>
-      ))}
+      </a>
     </div>
   )
 }
