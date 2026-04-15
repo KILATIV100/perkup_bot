@@ -129,7 +129,7 @@ function DashboardTab() {
         ))}
       </div>
 
-      <a href="/admin/vending"
+      <a href="#/admin/vending"
         className="block rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm active:scale-[0.98] transition-transform">
         <div className="flex items-center gap-3">
           <span className="text-3xl">🤖</span>
