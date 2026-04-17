@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
-import { adminApi, loyaltyApi } from '../lib/api'
+import { adminApi, loyaltyApi, api } from '../lib/api'
+
+const updateOrderStatus = (id: number, status: string) => api.patch(`/api/orders/${id}/status`, { status })
 
 type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations' | 'vouchers'
 
@@ -236,6 +238,19 @@ function OrdersTab() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
+  const [confirming, setConfirming] = useState<number | null>(null)
+
+  const confirmPayment = async (orderId: number) => {
+    if (!window.confirm('Підтвердити оплату #' + orderId + '? Клієнту нарахуються бали.')) return
+    setConfirming(orderId)
+    try {
+      await updateOrderStatus(orderId, 'COMPLETED')
+      await load()
+    } catch (e: any) { alert(e?.response?.data?.error || 'Помилка') }
+    setConfirming(null)
+  }
+
+  const ACTIVE_ST = ['PENDING','SENT_TO_POS','ACCEPTED','PREPARING','READY','UNASSIGNED']
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -279,6 +294,12 @@ function OrdersTab() {
                 {o.items?.map((i: any) => `${i.name} x${i.quantity}`).join(', ')}
               </div>
               <div className="text-xs text-gray-300 mt-1">{new Date(o.createdAt).toLocaleString('uk')}</div>
+              {ACTIVE_ST.includes(o.status) && (
+                <button onClick={() => confirmPayment(o.id)} disabled={confirming === o.id}
+                  className="mt-2 w-full py-2 rounded-xl bg-green-600 text-white text-sm font-semibold disabled:opacity-60 active:scale-98 transition-transform">
+                  {confirming === o.id ? '⏳ Підтверджую...' : '✅ Підтвердити оплату → нарахувати бали'}
+                </button>
+              )}
             </div>
           ))}
         </div>
