@@ -176,14 +176,12 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
   // ─── VOUCHER LOOKUP (for barista/admin) ─────────────────────────
   app.get('/voucher/:code', { preHandler: requireStaff }, async (req: any, reply: any) => {
     const code = (req.params as any).code.toUpperCase()
-    const voucher = await prisma.prizeVoucher.findUnique({
-      where: { code },
-      include: { user: { select: { firstName: true, lastName: true, phone: true, points: true } } }
-    })
+    const voucher = await prisma.prizeVoucher.findUnique({ where: { code } })
     if (!voucher) return reply.status(404).send({ success: false, error: 'Ваучер не знайдено' })
     if (voucher.isUsed) return reply.status(400).send({ success: false, error: 'Ваучер вже використано', voucher })
     if (voucher.expiresAt < new Date()) return reply.status(400).send({ success: false, error: 'Ваучер прострочено', voucher })
-    return reply.send({ success: true, voucher })
+    const user = await prisma.user.findUnique({ where: { id: voucher.userId }, select: { firstName: true, lastName: true, phone: true, points: true } })
+    return reply.send({ success: true, voucher, user })
   })
 
   app.post('/redeem/:code', { preHandler: requireAuth }, async (req: any, reply: any) => {
