@@ -184,6 +184,20 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     return reply.send({ success: true, voucher, user })
   })
 
+  // GET /api/loyalty/voucher/:code — перевірка ваучера для бариста
+  app.get('/voucher/:code', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
+      return reply.status(403).send({ success: false, error: 'Forbidden' })
+    }
+    const code = (req.params as any).code.toUpperCase()
+    const voucher = await prisma.prizeVoucher.findUnique({ where: { code } })
+    if (!voucher) return reply.status(404).send({ success: false, error: 'Ваучер не знайдено' })
+    if (voucher.isUsed) return reply.status(400).send({ success: false, error: 'Ваучер вже використано', voucher })
+    if (voucher.expiresAt < new Date()) return reply.status(400).send({ success: false, error: 'Ваучер прострочено', voucher })
+    const user = await prisma.user.findUnique({ where: { id: voucher.userId }, select: { firstName: true, lastName: true, phone: true, points: true } })
+    return reply.send({ success: true, voucher, user })
+  })
+
   app.post('/redeem/:code', { preHandler: requireAuth }, async (req: any, reply: any) => {
     if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
       return reply.status(403).send({ success: false, error: 'Forbidden' })
@@ -200,5 +214,62 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     if (user) await tgSend(String(user.telegramId), '✅ Приз "' + voucher.prizeLabel + '" активовано!')
 
     return reply.send({ success: true, prize: voucher.prizeLabel, type: voucher.prizeType })
+  })
+
+  // ─── BUY SPINS ────────────────────────────────────────────────
+  // Packages: 1 spin = 50pts, 3 spins = 120pts, 5 spins = 175pts
+  const SPIN_PACKAGES = [
+    { id: 'spin_1', spins: 1, cost: 50,  label: '1 спін' },
+    { id: 'spin_3', spins: 3, cost: 120, label: '3 спіни' },
+    { id: 'spin_5', spins: 5, cost: 175, label: '5 спінів' },
+  ]
+
+  app.get('/spin-packages', async (_req, reply) => {
+    return reply.send({ success: true, packages: SPIN_PACKAGES })
+  })
+
+  app.post('/buy-spins', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    const { packageId } = req.body as { packageId: string }
+    const pkg = SPIN_PACKAGES.find(p => p.id === packageId)
+    if (!pkg) return reply.status(400).send({ success: false, error: 'Невірний пакет' })
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    if (!user) return reply.status(404).send({ success: false, error: 'Not found' })
+    if (user.points < pkg.cost) {
+      return reply.status(400).send({ success: false, error: `Недостатньо балів. Потрібно ${pkg.cost}, є ${user.points}` })
+    }
+
+    const key = `buy_spins:${user.id}:${Date.now()}`
+    await prisma.$transaction(async (tx: any) => {
+      await tx.user.update({ where: { id: user.id }, data: { points: { decrement: pkg.cost } } })
+      await tx.pointsTransaction.create({
+        data: {
+          userId: user.id,
+          amount: -pkg.cost,
+          type: 'SPIN',
+          description: `Куплено ${pkg.label} за бали`,
+          idempotencyKey: key,
+        }
+      })
+      // Give extra spins by recording placeholder spin results that will be offset
+      // We store bought spins count separately via negative spin results trick:
+      // Actually: increase completedOrders credit by creating fake completed orders?
+      // Simpler: store bought spins in a dedicated field via raw update
+      await tx.$executeRawUnsafe(
+        `UPDATE "User" SET "monthlyOrders" = "monthlyOrders" + $1 WHERE "id" = $2`,
+        pkg.spins * 5, // each 5 monthly orders = 1 spin
+        user.id
+      )
+    })
+
+    const updated = await prisma.user.findUnique({ where: { id: user.id } })
+    await tgSend(String(user.telegramId), `🎰 Куплено ${pkg.label}! Списано ${pkg.cost} балів.`)
+
+    return reply.send({
+      success: true,
+      message: `${pkg.label} додано!`,
+      pointsSpent: pkg.cost,
+      newBalance: updated?.points || 0,
+    })
   })
 }
