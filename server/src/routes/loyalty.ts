@@ -39,14 +39,14 @@ function getNextLevel(points: number): { name: string; required: number } | null
 }
 
 const WHEEL_PRIZES = [
-  { id: 'points20',  label: '+20 балів',       emoji: '⭐', type: 'points',   value: 20,  weight: 20 },
-  { id: 'points10',  label: '+10 балів',       emoji: '⭐', type: 'points',   value: 10,  weight: 17 },
-  { id: 'upgrade',   label: 'Апгрейд напою',   emoji: '☕', type: 'voucher',  value: 100, weight: 12 },
-  { id: 'discount',  label: '-10% знижка',      emoji: '🔥', type: 'discount', value: 10, weight: 10 },
+  { id: 'points20',  label: '+20 балів',        emoji: '⭐', type: 'points',   value: 20,  weight: 20 },
+  { id: 'points10',  label: '+10 балів',        emoji: '⭐', type: 'points',   value: 10,  weight: 17 },
+  { id: 'upgrade',   label: 'Апгрейд напою',    emoji: '☕', type: 'voucher',  value: 100, weight: 12 },
+  { id: 'discount',  label: '-10% знижка',      emoji: '🔥', type: 'discount', value: 10,  weight: 10 },
   { id: 'sweet',     label: 'Солодощі',         emoji: '🍰', type: 'voucher',  value: 100, weight: 8  },
   { id: 'coffee',    label: 'Кава в подарунок', emoji: '☕', type: 'voucher',  value: 100, weight: 5  },
-  { id: 'sticker',   label: 'Стікер PerkUp',    emoji: '🎁', type: 'physical', value: 0, weight: 3  },
-  { id: 'nothing',   label: 'Не пощастило',     emoji: '😔', type: 'nothing',  value: 0,  weight: 25 },
+  { id: 'sticker',   label: 'Стікер PerkUp',    emoji: '🎁', type: 'physical', value: 0,   weight: 3  },
+  { id: 'nothing',   label: 'Не пощастило',     emoji: '😔', type: 'nothing',  value: 0,   weight: 25 },
 ]
 
 function spinWheel(): typeof WHEEL_PRIZES[0] {
@@ -159,7 +159,7 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
           expiresAt, isUsed: false,
         },
       })
-      await tgSend(String(user.telegramId), '🎉 Приз: ' + prize.label + '\nКод: ' + voucherCode + '\nДійсний 7 днів.')
+      await tgSend(String(user.telegramId), '🎁 Приз: ' + prize.label + '\nКод: ' + voucherCode + '\nДійсний 7 днів.')
     }
 
     return reply.send({
@@ -175,22 +175,8 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     return reply.send({ success: true, prizes: WHEEL_PRIZES })
   })
 
-  // ─── VOUCHER LOOKUP (for barista/admin) ─────────────────────────
+  // ─── VOUCHER LOOKUP (for barista/admin) ──────────────────────────────────────
   app.get('/voucher/:code', { preHandler: requireStaff }, async (req: any, reply: any) => {
-    const code = (req.params as any).code.toUpperCase()
-    const voucher = await prisma.prizeVoucher.findUnique({ where: { code } })
-    if (!voucher) return reply.status(404).send({ success: false, error: 'Ваучер не знайдено' })
-    if (voucher.isUsed) return reply.status(400).send({ success: false, error: 'Ваучер вже використано', voucher })
-    if (voucher.expiresAt < new Date()) return reply.status(400).send({ success: false, error: 'Ваучер прострочено', voucher })
-    const user = await prisma.user.findUnique({ where: { id: voucher.userId }, select: { firstName: true, lastName: true, phone: true, points: true } })
-    return reply.send({ success: true, voucher, user })
-  })
-
-  // GET /api/loyalty/voucher/:code — перевірка ваучера для бариста
-  app.get('/voucher/:code', { preHandler: requireAuth }, async (req: any, reply: any) => {
-    if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
-      return reply.status(403).send({ success: false, error: 'Forbidden' })
-    }
     const code = (req.params as any).code.toUpperCase()
     const voucher = await prisma.prizeVoucher.findUnique({ where: { code } })
     if (!voucher) return reply.status(404).send({ success: false, error: 'Ваучер не знайдено' })
@@ -218,10 +204,9 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     return reply.send({ success: true, prize: voucher.prizeLabel, type: voucher.prizeType })
   })
 
-  // ─── BUY SPINS ────────────────────────────────────────────────
-  // Packages: 1 spin = 50pts, 3 spins = 120pts, 5 spins = 175pts
+  // ─── BUY SPINS ───────────────────────────────────────────────────────────────
   const SPIN_PACKAGES = [
-    { id: 'spin_1', spins: 1, cost: 50,  label: '1 спін' },
+    { id: 'spin_1', spins: 1, cost: 50,  label: '1 спін'  },
     { id: 'spin_3', spins: 3, cost: 120, label: '3 спіни' },
     { id: 'spin_5', spins: 5, cost: 175, label: '5 спінів' },
   ]
@@ -243,12 +228,10 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
 
     const key = `buy_spins:${user.id}:${Date.now()}`
     await prisma.$transaction(async (tx: any) => {
-      // Deduct points
       await tx.user.update({
         where: { id: user.id },
         data: { points: { decrement: pkg.cost } }
       })
-      // Record transaction
       await tx.pointsTransaction.create({
         data: {
           userId: user.id,
@@ -258,10 +241,6 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
           idempotencyKey: key,
         }
       })
-      // Grant spins: create N SpinResult records with prizeId 'bought' as credits
-      // We use negative spin approach: create "bought" spin records that add to spinsEarned calc
-      // Simpler: increase monthlyOrders so spinsEarned = floor((completedOrders + monthlyOrders/5) / 5)
-      // Actually cleanest: just increment monthlyOrders by spins*5 so each 5 = 1 spin slot
       await tx.user.update({
         where: { id: user.id },
         data: { monthlyOrders: { increment: pkg.spins * 5 } }
