@@ -90,7 +90,8 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     const completedOrders = await prisma.order.count({
       where: { userId: user.id, status: 'COMPLETED' },
     })
-    const spinsEarned = Math.floor(completedOrders / 5)
+    const boughtSpinCredits = Math.floor((user.monthlyOrders || 0) / 5)
+    const spinsEarned = Math.floor(completedOrders / 5) + boughtSpinCredits
     const spinsUsed = await prisma.spinResult.count({ where: { userId: user.id } })
     const spinsAvailable = Math.max(0, spinsEarned - spinsUsed)
 
@@ -117,7 +118,8 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     const completedOrders = await prisma.order.count({
       where: { userId: user.id, status: 'COMPLETED' },
     })
-    const spinsEarned = Math.floor(completedOrders / 5)
+    const boughtSpinCredits = Math.floor((user.monthlyOrders || 0) / 5)
+    const spinsEarned = Math.floor(completedOrders / 5) + boughtSpinCredits
     const spinsUsed = await prisma.spinResult.count({ where: { userId: user.id } })
 
     if (spinsEarned - spinsUsed <= 0) {
@@ -241,7 +243,12 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
 
     const key = `buy_spins:${user.id}:${Date.now()}`
     await prisma.$transaction(async (tx: any) => {
-      await tx.user.update({ where: { id: user.id }, data: { points: { decrement: pkg.cost } } })
+      // Deduct points
+      await tx.user.update({
+        where: { id: user.id },
+        data: { points: { decrement: pkg.cost } }
+      })
+      // Record transaction
       await tx.pointsTransaction.create({
         data: {
           userId: user.id,
@@ -251,15 +258,14 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
           idempotencyKey: key,
         }
       })
-      // Give extra spins by recording placeholder spin results that will be offset
-      // We store bought spins count separately via negative spin results trick:
-      // Actually: increase completedOrders credit by creating fake completed orders?
-      // Simpler: store bought spins in a dedicated field via raw update
-      await tx.$executeRawUnsafe(
-        `UPDATE "User" SET "monthlyOrders" = "monthlyOrders" + $1 WHERE "id" = $2`,
-        pkg.spins * 5, // each 5 monthly orders = 1 spin
-        user.id
-      )
+      // Grant spins: create N SpinResult records with prizeId 'bought' as credits
+      // We use negative spin approach: create "bought" spin records that add to spinsEarned calc
+      // Simpler: increase monthlyOrders so spinsEarned = floor((completedOrders + monthlyOrders/5) / 5)
+      // Actually cleanest: just increment monthlyOrders by spins*5 so each 5 = 1 spin slot
+      await tx.user.update({
+        where: { id: user.id },
+        data: { monthlyOrders: { increment: pkg.spins * 5 } }
+      })
     })
 
     const updated = await prisma.user.findUnique({ where: { id: user.id } })
