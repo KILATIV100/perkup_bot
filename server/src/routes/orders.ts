@@ -288,9 +288,20 @@ export default async function orderRoutes(app: FastifyInstance) {
 
   app.delete('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const id = Number(req.params.id)
-    const order = await prisma.order.findFirst({ where: { id, userId: req.user.id } })
+    const isStaff = ['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)
+
+    // Staff can cancel any order, users only their own
+    const order = await prisma.order.findFirst({
+      where: isStaff ? { id } : { id, userId: req.user.id }
+    })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
-    if (!['PENDING', 'PAYMENT_PENDING', 'UNASSIGNED'].includes(order.status)) {
+
+    // Staff can cancel active orders, users only pending ones
+    const allowedStatuses = isStaff
+      ? ['PENDING', 'PAYMENT_PENDING', 'UNASSIGNED', 'SENT_TO_POS', 'ACCEPTED', 'PREPARING', 'READY']
+      : ['PENDING', 'PAYMENT_PENDING', 'UNASSIGNED']
+
+    if (!allowedStatuses.includes(order.status)) {
       return reply.status(400).send({ success: false, error: 'Cannot cancel' })
     }
     await prisma.order.update({ where: { id }, data: { status: 'CANCELLED' } })
