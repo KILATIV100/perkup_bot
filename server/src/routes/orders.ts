@@ -269,7 +269,7 @@ export default async function orderRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const orders = await prisma.order.findMany({
       where: { userId: req.user.id },
-      include: { items: true, location: { select: { name: true, slug: true } } },
+      include: { items: true, location: { select: { name: true, slug: true, googlePlaceId: true } } },
       orderBy: { createdAt: 'desc' },
       take: 20,
     })
@@ -280,7 +280,7 @@ export default async function orderRoutes(app: FastifyInstance) {
     const id = Number(req.params.id)
     const order = await prisma.order.findFirst({
       where: { id, userId: req.user.id },
-      include: { items: true, location: { select: { name: true, slug: true } } },
+      include: { items: true, location: { select: { name: true, slug: true, googlePlaceId: true } } },
     })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
     return reply.send({ success: true, order })
