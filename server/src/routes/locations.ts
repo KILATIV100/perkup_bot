@@ -16,12 +16,11 @@ function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: numbe
 }
 
 function isLocationOpen(workingHours: any[]): { isOpen: boolean; nextOpenTime?: string } {
-  const now = new Date()
-  // Kyiv time (UTC+2/+3)
-  const kyivOffset = 2 // adjust for DST if needed
-  const kyivNow = new Date(now.getTime() + kyivOffset * 60 * 60 * 1000)
-  const day = kyivNow.getUTCDay()
-  const timeStr = `${kyivNow.getUTCHours().toString().padStart(2, '0')}:${kyivNow.getUTCMinutes().toString().padStart(2, '0')}`
+  // Europe/Kiev handles DST automatically (UTC+2 winter, UTC+3 summer)
+  const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' })
+  const kyivNow = new Date(kyivStr)
+  const day = kyivNow.getDay()
+  const timeStr = kyivNow.getHours().toString().padStart(2, '0') + ':' + kyivNow.getMinutes().toString().padStart(2, '0')
 
   const todayHours = workingHours.find(h => h.dayOfWeek === day)
   if (!todayHours || todayHours.isClosed) {
