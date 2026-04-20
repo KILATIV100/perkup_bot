@@ -375,3 +375,4 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, status: parsed.data.status })
   })
+}
