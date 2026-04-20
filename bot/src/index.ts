@@ -31,21 +31,22 @@ function progressBar(current: number, required: number) {
   return '█'.repeat(filled) + '░'.repeat(10 - filled) + ` ${Math.round(pct * 100)}%`
 }
 
+const BOT_SECRET = process.env.BOT_SECRET || ''
+
 async function fetchUserStatus(telegramId: number): Promise<any | null> {
   try {
-    const res = await fetch(`${API_URL}/api/users/tg/${telegramId}`)
+    const res = await fetch(`${API_URL}/api/auth/bot/${telegramId}`, {
+      headers: { 'x-bot-secret': BOT_SECRET },
+    })
     if (!res.ok) return null
     return res.json()
   } catch { return null }
 }
 
 async function fetchAuthToken(telegramId: number): Promise<string | null> {
-  try {
-    const res = await fetch(`${API_URL}/api/auth/tg-token/${telegramId}`)
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.token || null
-  } catch { return null }
+  // Бот не може отримати JWT токен без initData від Telegram WebApp
+  // Купівля спінів через бот вимагає відкрити застосунок для авторизації
+  return null
 }
 
 // ─── Keyboards ────────────────────────────────────────────────────
@@ -235,9 +236,9 @@ bot.callbackQuery(/^loc:(.+)$/, async (ctx) => {
   const slug = ctx.match![1]
 
   const LOCS: Record<string, { addr: string; maps: string }> = {
-    'krona':      { addr: 'ЖК Крона Парк 2, Бровари',          maps: 'https://maps.app.goo.gl/6sPuGH7ufvYZTL4N9' },
-    'pryozerny':  { addr: 'Парк Приозерний, Бровари',           maps: 'https://maps.app.goo.gl/vQm5a7WdT5H3JDKF6' },
-    'mark-mall':  { addr: 'вул. Грушевського 2б, ТЦ Марк Молл', maps: 'https://maps.app.goo.gl/nxAUFjBSBLQUXVkd8' },
+    'krona':      { addr: 'ЖК Крона Парк 2, Бровари',           maps: 'https://www.google.com/maps/dir/?api=1&destination=50.51500,30.78850' },
+    'pryozerny':  { addr: 'Парк Приозерний, Бровари',            maps: 'https://www.google.com/maps/dir/?api=1&destination=50.52100,30.77900' },
+    'mark-mall':  { addr: 'вул. Грушевського 2б, ТЦ Марк Молл',  maps: 'https://www.google.com/maps/dir/?api=1&destination=50.51200,30.79500' },
   }
 
   const loc = LOCS[slug]
