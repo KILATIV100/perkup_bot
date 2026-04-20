@@ -212,6 +212,46 @@ export default async function authRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /api/auth/bot/:telegramId — для Telegram бота (захищений BOT_SECRET)
+  app.get('/bot/:telegramId', async (req: any, reply: any) => {
+    const secret = req.headers['x-bot-secret']
+    if (!secret || secret !== process.env.BOT_SECRET) {
+      return reply.status(401).send({ success: false, error: 'Unauthorized' })
+    }
+    const telegramId = BigInt(req.params.telegramId)
+    const user = await prisma.user.findUnique({
+      where: { telegramId },
+    })
+    if (!user) return reply.status(404).send({ success: false, error: 'Not found' })
+
+    const completedOrders = await prisma.order.count({
+      where: { userId: user.id, status: 'COMPLETED' },
+    })
+    const boughtSpinCredits = Math.floor((user.monthlyOrders || 0) / 5)
+    const spinsEarned = Math.floor(completedOrders / 5) + boughtSpinCredits
+    const spinsUsed = await prisma.spinResult.count({ where: { userId: user.id } })
+    const spinsAvailable = Math.max(0, spinsEarned - spinsUsed)
+
+    const points = user.points
+    const level = points >= 3000 ? 'Platinum' : points >= 1000 ? 'Gold' : points >= 300 ? 'Silver' : 'Bronze'
+    const levelMap: Record<string, { name: string; required: number } | null> = {
+      Bronze:   { name: 'Silver', required: 300 },
+      Silver:   { name: 'Gold', required: 1000 },
+      Gold:     { name: 'Platinum', required: 3000 },
+      Platinum: null,
+    }
+
+    return reply.send({
+      success: true,
+      points,
+      level,
+      nextLevel: levelMap[level],
+      completedOrders,
+      spinsAvailable,
+      firstName: user.firstName,
+    })
+  })
+
   // GET /api/auth/me
   app.get('/me', {
     preHandler: async (req, reply) => {
