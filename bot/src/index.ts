@@ -236,9 +236,9 @@ bot.callbackQuery(/^loc:(.+)$/, async (ctx) => {
   const slug = ctx.match![1]
 
   const LOCS: Record<string, { addr: string; maps: string }> = {
-    'krona':      { addr: 'ЖК Крона Парк 2, Бровари',           maps: 'https://www.google.com/maps/dir/?api=1&destination=50.51500,30.78850' },
-    'pryozerny':  { addr: 'Парк Приозерний, Бровари',            maps: 'https://www.google.com/maps/dir/?api=1&destination=50.52100,30.77900' },
-    'mark-mall':  { addr: 'вул. Грушевського 2б, ТЦ Марк Молл',  maps: 'https://www.google.com/maps/dir/?api=1&destination=50.51200,30.79500' },
+    'krona':      { addr: 'вул. Чорновола 8В, Бровари (ЖК Крона Парк 2)', maps: 'https://www.google.com/maps/dir/?api=1&destination=50.51723,30.77948&travelmode=driving' },
+    'pryozerny':  { addr: 'вул. Фіалківська 27А, Бровари (Парк Приозерний)', maps: 'https://www.google.com/maps/dir/?api=1&destination=50.50131,30.75401&travelmode=driving' },
+    'mark-mall':  { addr: 'вул. Київська 239, Бровари (ТЦ Марк Молл)', maps: 'https://www.google.com/maps/dir/?api=1&destination=50.51482,30.78220&travelmode=driving' },
   }
 
   const loc = LOCS[slug]
