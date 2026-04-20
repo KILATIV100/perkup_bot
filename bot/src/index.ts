@@ -195,7 +195,7 @@ bot.callbackQuery(/^buy:spin_(\d+)$/, async (ctx) => {
 
   const token = await fetchAuthToken(ctx.from.id)
   if (!token) {
-    await ctx.answerCallbackQuery('Відкрий застосунок для авторизації', { show_alert: true })
+    await ctx.answerCallbackQuery({ text: 'Відкрий застосунок для авторизації', show_alert: true })
     return
   }
 
@@ -207,7 +207,7 @@ bot.callbackQuery(/^buy:spin_(\d+)$/, async (ctx) => {
     })
     const data = await res.json()
     if (!res.ok) {
-      await ctx.answerCallbackQuery(data.error || 'Помилка покупки', { show_alert: true })
+      await ctx.answerCallbackQuery({ text: String(data.error || 'Помилка покупки'), show_alert: true })
       return
     }
     await ctx.editMessageText(
@@ -217,7 +217,7 @@ bot.callbackQuery(/^buy:spin_(\d+)$/, async (ctx) => {
         .text('🏠 На головну', 'menu:main') }
     )
   } catch {
-    await ctx.answerCallbackQuery('Мережева помилка', { show_alert: true })
+    await ctx.answerCallbackQuery({ text: 'Мережева помилка', show_alert: true })
   }
 })
 
