@@ -346,7 +346,7 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { user: true },
+      include: { user: true, location: { select: { name: true, slug: true } } },
     })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
 
