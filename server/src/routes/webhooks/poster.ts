@@ -78,10 +78,10 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
 
         // status 7 БЕЗ transaction_id = відмінено (не оплачено)
         // status 7 З transaction_id = оплачено і закрито (резерв, якщо transaction:closed не прийшов)
-        if (posterStatus === 7 && !transactionId) {
+        if (posterStatus === 7) {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
           await tgSend(String(order.user.telegramId), '\u274c \u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u043e\u044e.')
-          app.log.info({ orderId: order.id }, 'Order CANCELLED (status 7, no transaction)')
+          app.log.info({ orderId: order.id, transactionId }, 'Order CANCELLED (status 7)')
 
         } else if (posterStatus === 2 && order.status === 'SENT_TO_POS') {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'ACCEPTED' } })
