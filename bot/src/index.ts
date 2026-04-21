@@ -392,6 +392,77 @@ export async function sendLevelUp(telegramId: bigint, firstName: string, newLeve
   )
 }
 
+
+export async function sendReceipt(
+  telegramId: bigint,
+  orderId: number,
+  locationName: string,
+  items: Array<{ name: string; quantity: number; price: number }>,
+  total: number,
+  pointsEarned: number,
+  pointsBalance: number,
+  level: string,
+  paymentMethod: string = 'Готівка'
+) {
+  const now = new Date().toLocaleString('uk-UA', {
+    timeZone: 'Europe/Kiev',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+
+  const itemLines = items.map(item => {
+    const lineTotal = (item.price * item.quantity).toFixed(0)
+    const name = item.name.length > 20 ? item.name.slice(0, 19) + '…' : item.name
+    const dots = '.'.repeat(Math.max(1, 24 - name.length - lineTotal.length))
+    return `  ${name}${dots}${lineTotal} грн`
+    + (item.quantity > 1 ? `
+  (${item.quantity} × ${item.price} грн)` : '')
+  }).join('
+')
+
+  const separator = '─'.repeat(28)
+  const levelEmoji = ({ Bronze: '🥉', Silver: '🥈', Gold: '🥇', Platinum: '💎' } as any)[level] || '☕'
+
+  const text =
+    `🧾 *Чек #${orderId}*
+` +
+    `${separator}
+` +
+    `📍 ${locationName}
+` +
+    `📅 ${now}
+` +
+    `${separator}
+` +
+    `${itemLines}
+` +
+    `${separator}
+` +
+    `💳 *Разом:  ${total} грн*
+` +
+    `   Оплата: ${paymentMethod}
+` +
+    `${separator}
+` +
+    `${levelEmoji} *+${pointsEarned} балів нараховано*
+` +
+    `   Баланс: ${pointsBalance} балів
+` +
+    `${separator}
+` +
+    `_Дякуємо! Приходьте знову ☕_`
+
+  const kb = new InlineKeyboard()
+    .webApp('🎡 Крутити колесо', `${MINI_APP_URL}#/bonuses`)
+    .webApp('☕ Ще кави', MINI_APP_URL).row()
+    .url('⭐ Залишити відгук', `https://search.google.com/local/writereview?placeid=ChIJ4__L5fvZ1EAREzeFlvBsfwU`)
+
+  await bot.api.sendMessage(Number(telegramId), text, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  })
+}
+
 export async function sendSpinReminder(telegramId: bigint) {
   const variants = [
     `🎡 Твій безкоштовний спін чекає! Згорає о 23:59.`,
