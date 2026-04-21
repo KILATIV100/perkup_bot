@@ -359,18 +359,83 @@ export default async function orderRoutes(app: FastifyInstance) {
         total: Number(order.total),
         userPoints: order.user.points,
       }))
+
       if (pts > 0) {
-        await tgSend(String(order.user.telegramId), 'You got ' + pts + ' points for order #' + id + '!')
+        // Build receipt
+        const updatedUser = await prisma.user.findUnique({ where: { id: order.userId } })
+        const orderItems = await prisma.orderItem.findMany({
+          where: { orderId: id },
+          include: { product: { select: { name: true } }, bundle: { select: { name: true } } }
+        })
+
+        const items = orderItems.map((item: any) => ({
+          name: item.product?.name || item.bundle?.name || 'Товар',
+          quantity: item.quantity,
+          price: Math.round(Number(item.price || 0)),
+        }))
+
+        const userPoints = updatedUser?.points || 0
+        const level = userPoints >= 3000 ? 'Platinum' : userPoints >= 1000 ? 'Gold' : userPoints >= 300 ? 'Silver' : 'Bronze'
+
+        // Build and send receipt
+        const now = new Date().toLocaleString('uk-UA', {
+          timeZone: 'Europe/Kiev',
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        })
+        const locationName = order.location?.name || 'PerkUp'
+        const total = Math.round(Number(order.total))
+        const sep = '─'.repeat(28)
+        const levelEmoji = ({ Bronze: '🥉', Silver: '🥈', Gold: '🥇', Platinum: '💎' } as any)[level] || '☕'
+
+        const itemLines = items.map((item: any) => {
+          const lineTotal = (item.price * item.quantity).toString()
+          const name = item.name.length > 20 ? item.name.slice(0, 19) + '…' : item.name
+          const dots = '.'.repeat(Math.max(1, 24 - name.length - lineTotal.length))
+          return `  ${name}${dots}${lineTotal} грн` +
+            (item.quantity > 1 ? `
+  (${item.quantity} × ${item.price} грн)` : '')
+        }).join('
+')
+
+        const receiptText =
+          `🧾 *Чек #${id}*
+` +
+          `${sep}
+` +
+          `📍 ${locationName}
+` +
+          `📅 ${now}
+` +
+          `${sep}
+` +
+          `${itemLines}
+` +
+          `${sep}
+` +
+          `💳 *Разом:  ${total} грн*
+` +
+          `${sep}
+` +
+          `${levelEmoji} *+${pts} балів нараховано*
+` +
+          `   Баланс: ${userPoints} балів
+` +
+          `${sep}
+` +
+          `_Дякуємо! Приходьте знову ☕_`
+
+        await tgSend(String(order.user.telegramId), receiptText)
       }
     }
 
-    const statusMsg: Record<string, string> = {
-      ACCEPTED: 'Order #' + id + ' accepted! Preparing your coffee',
-      READY: 'Order #' + id + ' is ready! Pick it up',
-      CANCELLED: 'Order #' + id + ' cancelled.',
+    const statusMsgUk: Record<string, string> = {
+      ACCEPTED: `☕ Замовлення #${id} прийнято! Готуємо твою каву...`,
+      READY: `🔔 Замовлення #${id} готове! Підходь забирати.`,
+      CANCELLED: `❌ Замовлення #${id} скасовано.`,
     }
-    if (statusMsg[parsed.data.status]) {
-      await tgSend(String(order.user.telegramId), statusMsg[parsed.data.status])
+    if (statusMsgUk[parsed.data.status]) {
+      await tgSend(String(order.user.telegramId), statusMsgUk[parsed.data.status])
     }
 
     return reply.send({ success: true, status: parsed.data.status })
