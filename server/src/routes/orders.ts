@@ -388,42 +388,32 @@ export default async function orderRoutes(app: FastifyInstance) {
         const sep = '─'.repeat(28)
         const levelEmoji = ({ Bronze: '🥉', Silver: '🥈', Gold: '🥇', Platinum: '💎' } as any)[level] || '☕'
 
-        const itemLines = items.map((item: any) => {
-          const lineTotal = (item.price * item.quantity).toString()
-          const name = item.name.length > 20 ? item.name.slice(0, 19) + '…' : item.name
+        let itemLines = ''
+        for (const item of items) {
+          const lineTotal = String(item.price * item.quantity)
+          const name = item.name.length > 20 ? item.name.slice(0, 19) + '...' : item.name
           const dots = '.'.repeat(Math.max(1, 24 - name.length - lineTotal.length))
-          return `  ${name}${dots}${lineTotal} грн` +
-          const line = `  ${name}${dots}${lineTotal} грн`
-          return item.quantity > 1 ? line + `\n  (${item.quantity} x ${item.price} грн)` : line
-        }).join('
-')
+          itemLines += '  ' + name + dots + lineTotal + ' grn'
+          if (item.quantity > 1) itemLines += ' (' + item.quantity + ' x ' + item.price + ')'
+          itemLines += '\n'
+        }
 
-        const receiptText =
-          `🧾 *Чек #${id}*
-` +
-          `${sep}
-` +
-          `📍 ${locationName}
-` +
-          `📅 ${now}
-` +
-          `${sep}
-` +
-          `${itemLines}
-` +
-          `${sep}
-` +
-          `💳 *Разом:  ${total} грн*
-` +
-          `${sep}
-` +
-          `${levelEmoji} *+${pts} балів нараховано*
-` +
-          `   Баланс: ${userPoints} балів
-` +
-          `${sep}
-` +
-          `_Дякуємо! Приходьте знову ☕_`
+        const lines2 = [
+          '\u{1f9fe} *\u0427\u0435\u043a #' + id + '*',
+          sep,
+          '\u{1f4cd} ' + locationName,
+          '\u{1f4c5} ' + now,
+          sep,
+          itemLines.trim(),
+          sep,
+          '\u{1f4b3} *\u0420\u0430\u0437\u043e\u043c:  ' + total + ' \u0433\u0440\u043d*',
+          sep,
+          levelEmoji + ' *+' + pts + ' \u0431\u0430\u043b\u0456\u0432 \u043d\u0430\u0440\u0430\u0445\u043e\u0432\u0430\u043d\u043e*',
+          '   \u0411\u0430\u043b\u0430\u043d\u0441: ' + userPoints + ' \u0431\u0430\u043b\u0456\u0432',
+          sep,
+          '_\u0414\u044f\u043a\u0443\u0454\u043c\u043e! \u041f\u0440\u0438\u0445\u043e\u0434\u044c\u0442\u0435 \u0437\u043d\u043e\u0432\u0443 \u2615_',
+        ]
+        const receiptText = lines2.join('\n')
 
         await tgSend(String(order.user.telegramId), receiptText)
       }
