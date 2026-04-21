@@ -17,15 +17,20 @@ async function tgSend(chatId: string, text: string) {
 }
 
 // Fetch incoming order status from Poster API
-async function getPosterOrderStatus(posterSubdomain: string, token: string, incomingOrderId: number): Promise<number | null> {
+async function getPosterOrderStatus(posterSubdomain: string, token: string, incomingOrderId: number, log: any): Promise<number | null> {
   try {
     const url = `https://${posterSubdomain}.joinposter.com/api/incomingOrders.getIncomingOrder?token=${token}&incoming_order_id=${incomingOrderId}`
+    log.info({ url: url.replace(token, '***') }, 'Fetching Poster order status')
     const res = await fetch(url)
-    const data = await res.json() as any
+    const raw = await res.text()
+    log.info({ raw: raw.slice(0, 500), httpStatus: res.status }, 'Poster API response')
+    const data = JSON.parse(raw) as any
     // status: 1=new, 2=accepted, 4=cancelled/deleted, 6=closed/paid
-    return data?.response?.status ?? null
+    const status = data?.response?.incoming_order_status ?? data?.response?.status ?? null
+    log.info({ status }, 'Parsed Poster status')
+    return status
   } catch (e) {
-    console.error('getPosterOrderStatus error:', e)
+    log.error({ err: String(e) }, 'getPosterOrderStatus error')
     return null
   }
 }
@@ -86,7 +91,7 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
           return
         }
 
-        const posterStatus = await getPosterOrderStatus(payload.account, posterToken, posterOrderId)
+        const posterStatus = await getPosterOrderStatus(payload.account, posterToken, posterOrderId, app.log)
         app.log.info({ posterStatus, orderId: order.id }, 'Poster order status')
 
         // status 6 = closed/paid
