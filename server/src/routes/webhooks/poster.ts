@@ -144,7 +144,7 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
         }
 
         // status 4 = cancelled/deleted
-        if (posterStatus === 4 && !['CANCELLED', 'COMPLETED'].includes(order.status)) {
+        if ((posterStatus === 4 || posterStatus === 7) && !['CANCELLED', 'COMPLETED'].includes(order.status)) {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
           await tgSend(String(order.user.telegramId),
             '\u274c \u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u043e\u044e.'
