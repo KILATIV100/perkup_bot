@@ -53,12 +53,15 @@ export default async function orderRoutes(app: FastifyInstance) {
       customerPhone: z.string().min(10).max(20).optional(),
       comment: z.string().max(300).optional(),
       pointsUsed: z.number().min(0).default(0),
+      pointsToRedeem: z.number().min(0).optional(),
     })
 
     const result = schema.safeParse(req.body)
     if (!result.success) return reply.status(400).send({ success: false, error: 'Invalid request' })
 
-    const { locationId, items, customerPhone, comment, pointsUsed } = result.data
+    const rawData = result.data
+    const pointsUsed = rawData.pointsToRedeem ?? rawData.pointsUsed
+    const { locationId, items, customerPhone, comment } = rawData
 
     const location = await prisma.location.findUnique({
       where: { id: locationId, isActive: true },
