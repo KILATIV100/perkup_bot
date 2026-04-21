@@ -414,11 +414,9 @@ export async function sendReceipt(
     const lineTotal = (item.price * item.quantity).toFixed(0)
     const name = item.name.length > 20 ? item.name.slice(0, 19) + '…' : item.name
     const dots = '.'.repeat(Math.max(1, 24 - name.length - lineTotal.length))
-    return `  ${name}${dots}${lineTotal} грн`
-    + (item.quantity > 1 ? `
-  (${item.quantity} × ${item.price} грн)` : '')
-  }).join('
-')
+    const line = `  ${name}${dots}${lineTotal} грн`
+    return item.quantity > 1 ? line + `\n  (${item.quantity} x ${item.price} грн)` : line
+  }).join('\n')
 
   const separator = '─'.repeat(28)
   const levelEmoji = ({ Bronze: '🥉', Silver: '🥈', Gold: '🥇', Platinum: '💎' } as any)[level] || '☕'
