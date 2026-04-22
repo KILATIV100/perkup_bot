@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import crypto from 'crypto'
+import { getLevel, getLevelMultiplier, getNextLevel } from '../lib/loyalty'
 
 const BOT = process.env.BOT_TOKEN || ''
 
@@ -15,27 +16,6 @@ async function tgSend(chatId: string, text: string) {
   } catch (e) {
     console.error('tgSend error:', e)
   }
-}
-
-function getLevelMultiplier(points: number): number {
-  if (points >= 3000) return 1.3
-  if (points >= 1000) return 1.2
-  if (points >= 300) return 1.1
-  return 1.0
-}
-
-function getLevel(points: number): string {
-  if (points >= 3000) return 'Platinum'
-  if (points >= 1000) return 'Gold'
-  if (points >= 300) return 'Silver'
-  return 'Bronze'
-}
-
-function getNextLevel(points: number): { name: string; required: number } | null {
-  if (points < 300) return { name: 'Silver', required: 300 }
-  if (points < 1000) return { name: 'Gold', required: 1000 }
-  if (points < 3000) return { name: 'Platinum', required: 3000 }
-  return null
 }
 
 const WHEEL_PRIZES = [
@@ -58,8 +38,6 @@ function spinWheel(): typeof WHEEL_PRIZES[0] {
   }
   return WHEEL_PRIZES[WHEEL_PRIZES.length - 1]
 }
-
-export { getLevelMultiplier, getLevel }
 
 export default async function loyaltyRoutes(app: FastifyInstance) {
 

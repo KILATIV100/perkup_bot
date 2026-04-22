@@ -43,12 +43,6 @@ async function fetchUserStatus(telegramId: number): Promise<any | null> {
   } catch { return null }
 }
 
-async function fetchAuthToken(telegramId: number): Promise<string | null> {
-  // Бот не може отримати JWT токен без initData від Telegram WebApp
-  // Купівля спінів через бот вимагає відкрити застосунок для авторизації
-  return null
-}
-
 // ─── Keyboards ────────────────────────────────────────────────────
 function mainMenuKeyboard() {
   return new InlineKeyboard()
@@ -190,36 +184,16 @@ bot.callbackQuery('menu:bonuses', async (ctx) => {
 })
 
 // ─── Купівля спінів ──────────────────────────────────────────────
+// JWT вимагає initData з Telegram WebApp, якого у чат-бота немає.
+// Тому купівля спінів виконується тільки в міні-застосунку — тут лише редірект.
 bot.callbackQuery(/^buy:spin_(\d+)$/, async (ctx) => {
-  const packageId = `spin_${ctx.match![1]}`
-  await ctx.answerCallbackQuery('Обробляємо...')
-
-  const token = await fetchAuthToken(ctx.from.id)
-  if (!token) {
-    await ctx.answerCallbackQuery({ text: 'Відкрий застосунок для авторизації', show_alert: true })
-    return
-  }
-
-  try {
-    const res = await fetch(`${API_URL}/api/loyalty/buy-spins`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ packageId }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      await ctx.answerCallbackQuery({ text: String(data.error || 'Помилка покупки'), show_alert: true })
-      return
-    }
-    await ctx.editMessageText(
-      `🎰 *${data.message}*\n\nСписано: ${data.pointsSpent} балів\nЗалишок: ${data.newBalance} балів`,
-      { parse_mode: 'Markdown', reply_markup: new InlineKeyboard()
-        .webApp('🎡 Крутити зараз!', `${MINI_APP_URL}#/bonuses`).row()
-        .text('🏠 На головну', 'menu:main') }
-    )
-  } catch {
-    await ctx.answerCallbackQuery({ text: 'Мережева помилка', show_alert: true })
-  }
+  await ctx.answerCallbackQuery({ text: 'Відкрий застосунок для покупки', show_alert: true })
+  await ctx.reply(
+    '🛒 Купівля спінів доступна у застосунку PerkUp.',
+    { reply_markup: new InlineKeyboard()
+      .webApp('🎡 Відкрити застосунок', `${MINI_APP_URL}#/bonuses`).row()
+      .text('🏠 На головну', 'menu:main') }
+  )
 })
 
 // ─── Локації ─────────────────────────────────────────────────────
@@ -245,7 +219,7 @@ bot.callbackQuery(/^loc:(.+)$/, async (ctx) => {
   const review = GOOGLE_REVIEWS[slug]
   if (!loc || !review) return
 
-  const nowKyiv = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kiev', hour: '2-digit', minute: '2-digit' })
+  const nowKyiv = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit' })
   const [h] = nowKyiv.split(':').map(Number)
   const isOpen = h >= 8 && h < 21
 
@@ -405,7 +379,7 @@ export async function sendReceipt(
   paymentMethod: string = 'Готівка'
 ) {
   const now = new Date().toLocaleString('uk-UA', {
-    timeZone: 'Europe/Kiev',
+    timeZone: 'Europe/Kyiv',
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -507,7 +481,10 @@ export async function sendNoActiveShift(ownerTelegramId: bigint, locationName: s
 }
 
 // ─── Broadcast (власник) ─────────────────────────────────────────
-const OWNER_ID = Number(process.env.OWNER_TELEGRAM_ID || '7363233852')
+if (!process.env.OWNER_TELEGRAM_ID) {
+  throw new Error('OWNER_TELEGRAM_ID env var is required')
+}
+const OWNER_ID = Number(process.env.OWNER_TELEGRAM_ID)
 const pendingBroadcast: { filter?: string; text?: string } = {}
 
 bot.command('broadcast', async (ctx) => {
@@ -541,12 +518,17 @@ bot.callbackQuery(/^bcsend:(.+)$/, async (ctx) => {
   try {
     const res = await fetch(`${API_URL}/api/admin/broadcast`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-bot-secret': BOT_SECRET },
       body: JSON.stringify({ filter, text }),
     })
     const data = await res.json()
+    if (!res.ok) {
+      await ctx.editMessageText(`❌ Помилка: ${data.error || 'unknown'}`)
+      return
+    }
     await ctx.editMessageText(`✅ Надіслано! Отримувачів: ${data.sent || '?'}`)
-  } catch {
+  } catch (err) {
+    console.error('[broadcast] fetch failed:', err)
     await ctx.editMessageText('❌ Помилка надсилання.')
   }
 })

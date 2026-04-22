@@ -26,6 +26,16 @@ import { syncAllLocations } from './services/poster'
 
 const app = Fastify({ logger: { level: 'info' }, ignoreTrailingSlash: true, ignoreDuplicateSlashes: true })
 
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET env var is required')
+  process.exit(1)
+}
+
+if (!process.env.OWNER_TELEGRAM_ID) {
+  console.error('FATAL: OWNER_TELEGRAM_ID env var is required')
+  process.exit(1)
+}
+
 async function bootstrap() {
   // Connect to databases BEFORE starting server
   try { await prisma.$connect(); console.log('PostgreSQL connected') } catch (err) { console.error('PostgreSQL error:', (err as Error).message) }
@@ -53,7 +63,7 @@ async function bootstrap() {
     },
     credentials: true,
   })
-  await app.register(jwt, { secret: process.env.JWT_SECRET || 'fallback-secret', sign: { expiresIn: '7d' } })
+  await app.register(jwt, { secret: process.env.JWT_SECRET as string, sign: { expiresIn: '7d' } })
   await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute', redis, skipOnError: true, keyGenerator: (req) => (req as any).user?.id?.toString() || req.ip })
   await app.register(healthRoutes,        { prefix: '/health' })
   await app.register(authRoutes,          { prefix: '/api/auth' })
@@ -83,10 +93,11 @@ async function bootstrap() {
     startPosterSyncWorker()
     await schedulePosterSync()
     console.log('Poster sync worker started')
-    setTimeout(async () => {
+    setTimeout(() => {
       console.log('[Poster] Running initial sync...')
-      await syncAllLocations()
-      console.log('[Poster] Initial sync done')
+      syncAllLocations()
+        .then(() => console.log('[Poster] Initial sync done'))
+        .catch((err) => console.error('[Poster] Initial sync failed:', (err as Error).message))
     }, 8000)
   } catch (err) { console.error('Poster sync error:', (err as Error).message) }
 

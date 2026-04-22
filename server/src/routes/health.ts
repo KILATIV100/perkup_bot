@@ -75,11 +75,6 @@ export default async function healthRoutes(app: FastifyInstance) {
       status: hasError ? 'schema_mismatch' : 'ok',
       timestamp: new Date().toISOString(),
       env: {
-        hasDbUrl: !!process.env.DATABASE_URL,
-        hasRedisUrl: !!process.env.REDIS_URL,
-        hasBotToken: !!process.env.BOT_TOKEN,
-        hasJwtSecret: !!process.env.JWT_SECRET,
-        hasClientUrl: process.env.CLIENT_URL || '(not set, default: perkup.com.ua)',
         nodeEnv: process.env.NODE_ENV || 'not set',
       },
       tables: results,
@@ -133,14 +128,6 @@ export default async function healthRoutes(app: FastifyInstance) {
       results.redisCache = { ok: val === 'ok' }
     } catch (err: any) {
       results.redisCache = { ok: false, error: err.message }
-    }
-
-    // 4. Test BOT_TOKEN is valid format
-    const botToken = process.env.BOT_TOKEN || ''
-    results.botToken = {
-      present: !!botToken,
-      format: /^\d+:[A-Za-z0-9_-]+$/.test(botToken) ? 'valid' : 'invalid',
-      length: botToken.length,
     }
 
     return reply.send({ success: true, timestamp: new Date().toISOString(), results })
