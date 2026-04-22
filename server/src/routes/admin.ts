@@ -50,6 +50,18 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
   }
 
+  const ownerOnly = async (req: any, reply: any) => {
+    try {
+      await req.jwtVerify()
+    } catch {
+      return reply.status(401).send({ success: false, error: 'Unauthorized' })
+    }
+
+    if (req.user.role !== 'OWNER') {
+      return reply.status(403).send({ success: false, error: 'Owner only' })
+    }
+  }
+
   app.get('/dashboard', { preHandler: adminOnly }, async (_req: any, reply: any) => {
     const [usersCount, ordersToday, ordersTotal, revenue, locationsCount] = await Promise.all([
       prisma.user.count(),
@@ -593,7 +605,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post('/db-push', { preHandler: adminOnly }, async (_req: any, reply: any) => {
+  app.post('/db-push', { preHandler: ownerOnly }, async (_req: any, reply: any) => {
     const results: string[] = []
     const run = async (sql: string, label: string) => {
       try {
@@ -640,5 +652,51 @@ export default async function adminRoutes(app: FastifyInstance) {
     const kronaCount = krona ? await prisma.product.count({ where: { locationId: krona.id } }) : 0
     const pryCount = pryozerny ? await prisma.product.count({ where: { locationId: pryozerny.id } }) : 0
     return reply.send({ success: true, kronaCount, pryCount })
+  })
+
+  // POST /api/admin/broadcast — called from bot (OWNER) via BOT_SECRET header.
+  // Rate limit: 5/min per IP to prevent accidental spam loops.
+  app.post('/broadcast', {
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    preHandler: async (req: any, reply: any) => {
+      const secret = req.headers['x-bot-secret']
+      if (!process.env.BOT_SECRET || secret !== process.env.BOT_SECRET) {
+        return reply.status(401).send({ success: false, error: 'Unauthorized' })
+      }
+    },
+  }, async (req: any, reply: any) => {
+    const body = z.object({
+      filter: z.enum(['all', 'silver', 'gold']),
+      text: z.string().min(1).max(4000),
+    }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
+
+    const where: any = {}
+    if (body.data.filter === 'silver') where.points = { gte: 300 }
+    else if (body.data.filter === 'gold') where.points = { gte: 1000 }
+
+    const users = await prisma.user.findMany({
+      where,
+      select: { telegramId: true },
+    })
+
+    const botToken = process.env.BOT_TOKEN
+    if (!botToken) return reply.status(500).send({ success: false, error: 'BOT_TOKEN not configured' })
+
+    let sent = 0
+    for (const u of users) {
+      try {
+        const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: Number(u.telegramId), text: body.data.text, parse_mode: 'Markdown' }),
+        })
+        if (res.ok) sent += 1
+      } catch (err) {
+        console.error('[broadcast] send failed:', (err as Error).message)
+      }
+    }
+
+    return reply.send({ success: true, sent, total: users.length })
   })
 }

@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import crypto from 'crypto'
-import { Prisma } from '@prisma/client'
+import { Prisma, OrderStatus } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { getLocationProfile } from '../lib/locationProfile'
@@ -9,11 +9,11 @@ import { normalizePhone } from '../lib/phone'
 import { awardCompletedOrderLoyalty } from '../lib/orderRewards'
 import { createPosterIncomingOrder } from '../services/poster'
 
-const OWNER_ID = process.env.OWNER_TELEGRAM_ID || '7363233852'
+const OWNER_ID = process.env.OWNER_TELEGRAM_ID || ''
 const BOT = process.env.BOT_TOKEN || ''
 
 async function tgSend(chatId: string, text: string) {
-  if (!BOT) return
+  if (!BOT || !chatId) return
   try {
     await fetch('https://api.telegram.org/bot' + BOT + '/sendMessage', {
       method: 'POST',
@@ -25,7 +25,7 @@ async function tgSend(chatId: string, text: string) {
 
 function locationIsOpen(hours: any[]): boolean {
   if (!hours || !Array.isArray(hours)) return true
-  const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kiev' })
+  const kyivStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/Kyiv' })
   const kyiv = new Date(kyivStr)
   const day = kyiv.getDay()
   const t = kyiv.getHours().toString().padStart(2, '0') + ':' + kyiv.getMinutes().toString().padStart(2, '0')
@@ -153,34 +153,53 @@ export default async function orderRoutes(app: FastifyInstance) {
     const finalTotal = Math.max(0, total - discount)
     const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
 
-    const order = await prisma.order.create({
-      data: {
-        userId: user.id,
-        locationId,
-        shiftId: activeShift?.id,
-        status: activeShift ? 'PENDING' : 'UNASSIGNED',
-        total: new Prisma.Decimal(finalTotal),
-        discount: new Prisma.Decimal(discount),
-        paymentMethod: 'cashier',
-        comment: comment || null,
-        pointsUsed,
-        qrCode,
-        items: { create: orderItems },
-      },
-      include: { items: true },
+    const order = await prisma.$transaction(async (tx) => {
+      if (discount > 0) {
+        // Atomic conditional decrement: only succeeds if user still has enough points.
+        // Prevents race when two concurrent orders try to spend the same balance.
+        const res = await tx.user.updateMany({
+          where: { id: user.id, points: { gte: discount } },
+          data: { points: { decrement: discount } },
+        })
+        if (res.count === 0) {
+          throw new Error('INSUFFICIENT_POINTS')
+        }
+      }
+      const created = await tx.order.create({
+        data: {
+          userId: user.id,
+          locationId,
+          shiftId: activeShift?.id,
+          status: activeShift ? 'PENDING' : 'UNASSIGNED',
+          total: new Prisma.Decimal(finalTotal),
+          discount: new Prisma.Decimal(discount),
+          paymentMethod: 'cashier',
+          comment: comment || null,
+          pointsUsed,
+          qrCode,
+          items: { create: orderItems },
+        },
+        include: { items: true },
+      })
+      if (discount > 0) {
+        await tx.pointsTransaction.create({ data: {
+          userId: user.id, amount: -discount, type: 'REDEEM',
+          description: 'Points for order #' + created.id,
+          idempotencyKey: 'redeem-order-' + created.id,
+        }})
+      }
+      return created
+    }).catch((err: Error) => {
+      if (err.message === 'INSUFFICIENT_POINTS') return null
+      throw err
     })
 
-    let finalStatus = order.status
-    let posterOrderId: number | null = null
-
-    if (pointsUsed > 0) {
-      await prisma.user.update({ where: { id: user.id }, data: { points: { decrement: discount } } })
-      await prisma.pointsTransaction.create({ data: {
-        userId: user.id, amount: -discount, type: 'REDEEM',
-        description: 'Points for order #' + order.id,
-        idempotencyKey: 'redeem-order-' + order.id,
-      }})
+    if (!order) {
+      return reply.status(400).send({ success: false, error: 'Not enough points' })
     }
+
+    let finalStatus: OrderStatus = order.status
+    let posterOrderId: number | null = null
 
     if (location.hasPoster) {
       try {
@@ -208,16 +227,14 @@ export default async function orderRoutes(app: FastifyInstance) {
         })
 
         posterOrderId = parseInt(posterOrder.incomingOrderId, 10)
-        finalStatus = 'SENT_TO_POS'
+        finalStatus = OrderStatus.SENT_TO_POS
 
-        await prisma.$executeRawUnsafe(
-          `UPDATE "Order" SET "posterOrderId" = $1, "status" = $2::"OrderStatus" WHERE "id" = $3`,
-          posterOrderId,
-          finalStatus,
-          order.id
-        )
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { posterOrderId, status: finalStatus },
+        })
       } catch (error) {
-        if (pointsUsed > 0) {
+        if (discount > 0) {
           await prisma.user.update({ where: { id: user.id }, data: { points: { increment: discount } } })
           await prisma.pointsTransaction.deleteMany({ where: { idempotencyKey: 'redeem-order-' + order.id } })
         }
@@ -382,7 +399,7 @@ export default async function orderRoutes(app: FastifyInstance) {
 
         // Build and send receipt
         const now = new Date().toLocaleString('uk-UA', {
-          timeZone: 'Europe/Kiev',
+          timeZone: 'Europe/Kyiv',
           day: '2-digit', month: '2-digit', year: 'numeric',
           hour: '2-digit', minute: '2-digit',
         })

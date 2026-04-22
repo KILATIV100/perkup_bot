@@ -436,9 +436,8 @@ export default async function authRoutes(app: FastifyInstance) {
     await prisma.pointsTransaction.deleteMany({ where: { userId } })
     await prisma.redemptionCode.deleteMany({ where: { userId } })
 
-    // Delete spin results and vouchers (raw SQL since no Prisma relation)
-    await prisma.$executeRawUnsafe('DELETE FROM "SpinResult" WHERE "userId" = $1', userId)
-    await prisma.$executeRawUnsafe('DELETE FROM "PrizeVoucher" WHERE "userId" = $1', userId)
+    await prisma.spinResult.deleteMany({ where: { userId } })
+    await prisma.prizeVoucher.deleteMany({ where: { userId } })
 
     // Clear Redis game stats
     try {
