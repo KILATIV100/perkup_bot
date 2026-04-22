@@ -31,8 +31,8 @@ export default function RadioPage() {
   const [genreSaved, setGenreSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pulse, setPulse] = useState(false)
-  const positionRef = useRef(position)
-  positionRef.current = position
+  // ref so tick interval always reads fresh value (avoids stale closure)
+  const currentTrackRef = useRef<RadioTrack | null>(null)
 
   const loadNow = async () => {
     try {
@@ -40,6 +40,7 @@ export default function RadioPage() {
       const d = res.data
       if (d.currentTrack) {
         setCurrentTrack(d.currentTrack)
+        currentTrackRef.current = d.currentTrack
         setPosition(d.position)
       }
     } catch { /* no tracks */ }
@@ -57,17 +58,14 @@ export default function RadioPage() {
     loadNow()
     loadPlaylist()
 
-    // Re-sync every 30s
     const syncInterval = setInterval(loadNow, 30000)
-    // Advance local position every second
     const tickInterval = setInterval(() => {
       setPosition(p => {
-        const dur = currentTrack?.duration ?? 0
+        const dur = currentTrackRef.current?.duration ?? 0
         if (dur > 0 && p >= dur - 1) { loadNow(); return 0 }
         return p + 1
       })
     }, 1000)
-    // Pulse animation
     const pulseInterval = setInterval(() => setPulse(v => !v), 800)
 
     return () => {
@@ -98,7 +96,7 @@ export default function RadioPage() {
   return (
     <div className="pb-24">
       {/* Hero - Now Playing */}
-      <div className="bg-gradient-to-br from-coffee-800 to-coffee-950 px-6 py-8 text-white">
+      <div className="bg-gradient-to-br from-coffee-800 to-coffee-900 px-6 py-8 text-white">
         {loading ? (
           <div className="flex flex-col items-center gap-4">
             <div className="w-32 h-32 rounded-full bg-white/10 animate-pulse" />
@@ -109,17 +107,16 @@ export default function RadioPage() {
             {/* Animated disc */}
             <div className="relative mb-5">
               <div
-                className="w-36 h-36 rounded-full shadow-2xl flex items-center justify-center text-5xl"
+                className="w-36 h-36 rounded-full shadow-2xl flex items-center justify-center"
                 style={{
                   background: 'conic-gradient(#7c3aed, #2563eb, #059669, #d97706, #7c3aed)',
                   animation: 'spin 8s linear infinite',
                 }}
               >
                 <div className="w-14 h-14 rounded-full bg-coffee-900 flex items-center justify-center text-2xl">
-                  ☕
+                  &#9749;
                 </div>
               </div>
-              {/* Pulsing ring */}
               <div
                 className="absolute inset-0 rounded-full border-2 border-white/30 transition-all duration-700"
                 style={{
@@ -149,15 +146,13 @@ export default function RadioPage() {
               </div>
             </div>
 
+            {/* Sound bars */}
             <div className="mt-4 flex items-center gap-2 text-xs text-white/50">
               {[0, 1, 2, 3, 4].map(i => (
                 <div
                   key={i}
                   className="w-1 rounded-full bg-white/60"
-                  style={{
-                    height: `${6 + Math.sin(Date.now() / 300 + i) * 4}px`,
-                    animation: `soundbar 0.${5 + i}s ease-in-out infinite alternate`,
-                  }}
+                  style={{ animation: `soundbar 0.${5 + i}s ease-in-out infinite alternate` }}
                 />
               ))}
               <span className="ml-1">Синхронізовано</span>
@@ -165,7 +160,7 @@ export default function RadioPage() {
           </div>
         ) : (
           <div className="text-center text-white/60 py-8">
-            <div className="text-4xl mb-3">🎵</div>
+            <div className="text-4xl mb-3">&#127925;</div>
             <div>Немає активних треків</div>
           </div>
         )}
@@ -175,7 +170,7 @@ export default function RadioPage() {
         {/* Genre picker */}
         <div>
           <div className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">
-            Жанр {genreSaved && <span className="text-green-500 normal-case font-normal">✓ Збережено</span>}
+            Жанр {genreSaved && <span className="text-green-500 normal-case font-normal">&#10003; Збережено</span>}
           </div>
           <div className="flex gap-2 flex-wrap">
             {GENRES.map(g => (
@@ -223,7 +218,7 @@ export default function RadioPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{t.title}</div>
-                    <div className="text-xs text-gray-400 truncate">{t.artist} • {t.genre}</div>
+                    <div className="text-xs text-gray-400 truncate">{t.artist} &bull; {t.genre}</div>
                   </div>
                   <div className="text-xs text-gray-400 flex-shrink-0">{formatTime(t.duration)}</div>
                 </div>
@@ -235,7 +230,7 @@ export default function RadioPage() {
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes soundbar { from { transform: scaleY(0.5); } to { transform: scaleY(1.5); } }
+        @keyframes soundbar { from { height: 4px; } to { height: 16px; } }
       `}</style>
     </div>
   )

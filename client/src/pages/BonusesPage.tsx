@@ -169,7 +169,7 @@ export default function BonusesPage() {
 
                 {/* Wheel */}
                 <div
-                  className="w-64 h-64 rounded-full border-4 border-white shadow-2xl"
+                  className="w-64 h-64 rounded-full border-4 border-white shadow-2xl relative"
                   style={{
                     background: prizes.length > 0
                       ? `conic-gradient(${buildWheelGradient(prizes)})`
