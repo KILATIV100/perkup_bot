@@ -379,7 +379,7 @@ export default async function orderRoutes(app: FastifyInstance) {
         total: Number(order.total),
         userPoints: order.user.points,
       }))
-
+    }
       if (pts > 0) {
         // Build receipt
         const updatedUser = await prisma.user.findUnique({ where: { id: order.userId } })
