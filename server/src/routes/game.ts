@@ -25,6 +25,10 @@ function getKyivDayKey(date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(date)
 }
 
+function getKyivDayKey(date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(date)
+}
+
 export default async function gameRoutes(app: FastifyInstance) {
   async function requireAuth(req: any, reply: any) {
     try { await req.jwtVerify() } catch {
