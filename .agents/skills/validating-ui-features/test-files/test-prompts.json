@@ -1,0 +1,104 @@
+{
+  "theme_toggle": {
+    "description": "No prompt needed - UI interaction only",
+    "steps": [
+      "Click Settings button (gear icon)",
+      "Click ThemePicker dropdown",
+      "Select Dark/Light/System"
+    ],
+    "verification": "Check body background color and localStorage"
+  },
+  "new_chat": {
+    "setup_prompt": "Hello, this is a test message to populate the chat history.",
+    "expected_action": "CHAT_CLEAR",
+    "verification": [
+      "Messages array cleared",
+      "StarterMessages visible",
+      "conversationId is null"
+    ]
+  },
+  "cancel_stream": {
+    "long_response_prompts": [
+      "Write a detailed 500-word essay about the history of software testing methodologies, including unit testing, integration testing, and end-to-end testing.",
+      "Explain the principles of quantum computing in great detail, covering qubits, superposition, entanglement, and quantum gates with examples.",
+      "Create a comprehensive tutorial on building RESTful APIs with proper authentication, error handling, and documentation."
+    ],
+    "expected_action": "CHAT_CANCEL_STREAM",
+    "keyboard_shortcut": "Escape"
+  },
+  "code_blocks": {
+    "prompts": [
+      {
+        "language": "python",
+        "prompt": "Write a Python function to calculate fibonacci numbers with proper type hints and docstring"
+      },
+      {
+        "language": "typescript",
+        "prompt": "Create a TypeScript interface for a blog post with author, comments, and tags"
+      },
+      {
+        "language": "bash",
+        "prompt": "Show me a bash script to backup a PostgreSQL database with timestamp in filename"
+      },
+      {
+        "language": "sql",
+        "prompt": "Write a SQL query with a CTE to find customers with duplicate email addresses"
+      },
+      {
+        "language": "csharp",
+        "prompt": "Write a C# async method to fetch data from an API with retry logic"
+      },
+      {
+        "language": "javascript",
+        "prompt": "Create a JavaScript function to debounce API calls with configurable delay"
+      }
+    ],
+    "expected_elements": [
+      "codeHeader with language label",
+      "Copy button (functional)",
+      "SyntaxHighlighter with vscDarkPlus theme",
+      "Line numbers on left",
+      "Word wrap for long lines"
+    ]
+  },
+  "complex_markdown": {
+    "prompts": [
+      {
+        "description": "Table comparison",
+        "prompt": "Create a markdown comparison table of React, Vue, and Angular including columns for: Framework, Language, Virtual DOM, State Management, and Learning Curve"
+      },
+      {
+        "description": "Documentation style",
+        "prompt": "Write a quick start guide with: h2 headings, numbered steps, bullet point prerequisites, inline code for commands, and a tip in a blockquote"
+      },
+      {
+        "description": "Mixed content",
+        "prompt": "Create documentation that includes: a warning blockquote, a table, nested bullet lists, bold and italic formatting, and a code example"
+      }
+    ],
+    "expected_elements": [
+      "Table with visible borders and headers",
+      "Ordered list with numbers",
+      "Unordered list with bullets",
+      "Nested lists with indentation",
+      "Bold text (**text**)",
+      "Italic text (*text*)",
+      "Inline code (`code`)",
+      "Blockquote with left border",
+      "Links that open in new tab"
+    ]
+  },
+  "file_upload": {
+    "description": "Test files for upload validation",
+    "files": [
+      { "name": "test.txt", "type": "text/plain", "description": "Plain text document" },
+      { "name": "test.md", "type": "text/markdown", "description": "Markdown document" },
+      { "name": "test.csv", "type": "text/csv", "description": "CSV data file" },
+      { "name": "test.json", "type": "application/json", "description": "JSON data file" },
+      { "name": "test.html", "type": "text/html", "description": "HTML document" },
+      { "name": "test.xml", "type": "application/xml", "description": "XML document" },
+      { "name": "test.png", "type": "image/png", "description": "PNG image with test graphic" }
+    ],
+    "prompt_with_files": "Please describe all the files I've attached. List each file type and summarize its contents."
+  }
+}

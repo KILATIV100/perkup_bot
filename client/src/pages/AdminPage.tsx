@@ -940,6 +940,8 @@ function LocationsTab() {
   const [draftPosterSubdomain, setDraftPosterSubdomain] = useState('')
   const [draftPosterAccount, setDraftPosterAccount] = useState('')
   const [draftPosterSpotId, setDraftPosterSpotId] = useState('')
+  const [draftPosterToken, setDraftPosterToken] = useState('')
+  const [savingPosterTokenId, setSavingPosterTokenId] = useState<number | null>(null)
 
   useEffect(() => {
     adminApi.getLocations().then(r => setLocations(r.data.locations)).finally(() => setLoading(false))
@@ -958,6 +960,7 @@ function LocationsTab() {
     setDraftPosterSubdomain(location.posterSubdomain || '')
     setDraftPosterAccount(location.posterAccount || '')
     setDraftPosterSpotId(location.posterSpotId ? String(location.posterSpotId) : '')
+    setDraftPosterToken('')
   }
 
   const cancelEditConfig = () => {
@@ -966,6 +969,7 @@ function LocationsTab() {
     setDraftPosterSubdomain('')
     setDraftPosterAccount('')
     setDraftPosterSpotId('')
+    setDraftPosterToken('')
   }
 
   const saveLocationConfig = async (locationId: number) => {
@@ -990,6 +994,20 @@ function LocationsTab() {
 
       cancelEditConfig()
     } catch {}
+  }
+
+  const savePosterToken = async (location: any) => {
+    const token = draftPosterToken.trim()
+    if (!token) return
+    try {
+      setSavingPosterTokenId(location.id)
+      await adminApi.setLocationPosterToken(location.slug, token)
+      setDraftPosterToken('')
+    } catch {
+      alert('Failed to save poster token')
+    } finally {
+      setSavingPosterTokenId(null)
+    }
   }
 
   if (loading) return <div className="text-center text-gray-400 py-4">...</div>
@@ -1033,6 +1051,17 @@ function LocationsTab() {
                 <input value={draftPosterSubdomain} onChange={(e) => setDraftPosterSubdomain(e.target.value)} placeholder="Poster subdomain" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white" />
                 <input value={draftPosterAccount} onChange={(e) => setDraftPosterAccount(e.target.value)} placeholder="Poster account" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white" />
                 <input value={draftPosterSpotId} onChange={(e) => setDraftPosterSpotId(e.target.value)} type="number" min="1" placeholder="Poster spot ID" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white" />
+                <div className="pt-1 border-t border-gray-200">
+                  <div className="text-[11px] text-gray-500 mb-1">Poster token (hidden in API responses)</div>
+                  <input value={draftPosterToken} onChange={(e) => setDraftPosterToken(e.target.value)} placeholder="Poster token" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white" />
+                  <button
+                    onClick={() => savePosterToken(loc)}
+                    disabled={!draftPosterToken.trim() || savingPosterTokenId === loc.id}
+                    className="mt-2 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-medium disabled:opacity-50"
+                  >
+                    {savingPosterTokenId === loc.id ? 'Saving token...' : 'Save poster token'}
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <button onClick={() => saveLocationConfig(loc.id)} className="px-3 py-2 rounded-lg bg-coffee-600 text-white text-xs font-medium">Зберегти</button>
                   <button onClick={cancelEditConfig} className="px-3 py-2 rounded-lg bg-gray-200 text-gray-700 text-xs font-medium">Скасувати</button>

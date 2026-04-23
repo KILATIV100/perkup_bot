@@ -23,6 +23,7 @@ import gameRoutes from './routes/game'
 import { schedulePosterSync, startPosterSyncWorker } from './workers/posterSync'
 import { scheduleReminderJobs, startReminderWorker } from './workers/reminders'
 import { syncAllLocations } from './services/poster'
+import { startCronJobs } from './cron'
 
 const app = Fastify({ logger: { level: 'info' }, ignoreTrailingSlash: true, ignoreDuplicateSlashes: true })
 
@@ -106,6 +107,12 @@ async function bootstrap() {
     await scheduleReminderJobs()
     console.log('Reminder worker started')
   } catch (err) { console.error('Reminder worker error:', (err as Error).message) }
+
+  try {
+    startCronJobs()
+  } catch (err) {
+    console.error('Cron start error:', (err as Error).message)
+  }
 }
 
 process.on('SIGTERM', async () => { await app.close(); await prisma.$disconnect(); process.exit(0) })
