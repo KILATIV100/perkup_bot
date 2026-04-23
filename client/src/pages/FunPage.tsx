@@ -17,6 +17,13 @@ interface MyStats {
   playsLimit: number
   rewards: { score: number; points: number; claimed: boolean }[]
 }
+interface GameStatus {
+  date: string
+  playsToday: number
+  playsLimit: number
+  pointsEarnedToday: number
+  pointsCapToday: number
+}
 
 interface RadioTrack {
   id: number
@@ -28,6 +35,14 @@ interface RadioTrack {
 }
 
 type Tab = 'game' | 'leaderboard' | 'rewards' | 'radio'
+type MiniGameType = 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'
+const MINI_GAMES: Array<{ type: MiniGameType; label: string; score: number }> = [
+  { type: 'TIC_TAC_TOE', label: 'Tic Tac Toe', score: 10 },
+  { type: 'PERKIE_CATCH', label: 'Runner', score: 12 },
+  { type: 'BARISTA_RUSH', label: 'Barista Rush', score: 14 },
+  { type: 'MEMORY_COFFEE', label: 'Memory', score: 8 },
+  { type: 'PERKIE_JUMP', label: 'Word Puzzle', score: 6 },
+]
 
 export default function FunPage() {
   const [tab, setTab] = useState<Tab>('game')
@@ -39,6 +54,9 @@ export default function FunPage() {
   const [lbLoading, setLbLoading] = useState(false)
   const [stats, setStats] = useState<MyStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
+  const [gameStatus, setGameStatus] = useState<GameStatus | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [finishingType, setFinishingType] = useState<string | null>(null)
 
   // Radio state
   const [radioTrack, setRadioTrack] = useState<RadioTrack | null>(null)
@@ -75,6 +93,29 @@ export default function FunPage() {
     } catch { setStats(null) }
     finally { setStatsLoading(false) }
   }, [])
+
+  const loadGameStatus = useCallback(async () => {
+    setStatusLoading(true)
+    try {
+      const res = await gameApi.getStatus()
+      setGameStatus(res.data)
+    } catch {
+      setGameStatus(null)
+    } finally {
+      setStatusLoading(false)
+    }
+  }, [])
+
+  const finishMiniGame = useCallback(async (type: MiniGameType, score: number) => {
+    setFinishingType(type)
+    try {
+      await gameApi.finish({ type, score })
+      await loadGameStatus()
+      await loadStats()
+    } finally {
+      setFinishingType(null)
+    }
+  }, [loadGameStatus, loadStats])
 
   // Radio handlers
   const loadRadio = useCallback(async () => {
@@ -128,9 +169,10 @@ export default function FunPage() {
 
   useEffect(() => {
     if (tab === 'leaderboard') loadLeaderboard()
-    if (tab === 'rewards') loadStats()
+    if (tab === 'rewards') { loadStats(); loadGameStatus() }
+    if (tab === 'game') loadGameStatus()
     if (tab === 'radio') loadRadio()
-  }, [tab, loadLeaderboard, loadStats, loadRadio])
+  }, [tab, loadLeaderboard, loadStats, loadGameStatus, loadRadio])
 
   useEffect(() => {
     return () => { if (syncRef.current) clearInterval(syncRef.current) }
@@ -185,6 +227,32 @@ export default function FunPage() {
           )}
 
           <CoffeeJumpGame onGameOver={handleGameOver} />
+
+          <div className="bg-white border border-gray-100 rounded-xl p-3">
+            <div className="font-bold text-gray-700 text-sm mb-2">Mini games progress</div>
+            {statusLoading ? (
+              <div className="text-xs text-gray-400">Loading...</div>
+            ) : gameStatus ? (
+              <div className="text-xs text-gray-500 mb-2">
+                Plays today: <b>{gameStatus.playsToday}/{gameStatus.playsLimit}</b> · Points: <b>{gameStatus.pointsEarnedToday}/{gameStatus.pointsCapToday}</b>
+              </div>
+            ) : (
+              <div className="text-xs text-gray-400 mb-2">Status unavailable</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              {MINI_GAMES.map((game) => (
+                <button
+                  key={game.type}
+                  onClick={() => finishMiniGame(game.type, game.score)}
+                  disabled={!!finishingType}
+                  className="px-2 py-2 rounded-lg bg-coffee-50 border border-coffee-200 text-xs font-medium text-coffee-700 disabled:opacity-50"
+                >
+                  {finishingType === game.type ? 'Saving...' : game.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -300,7 +368,7 @@ export default function FunPage() {
           ) : (
             <div className="text-center text-gray-400 py-12">
               <span className="text-4xl block mb-2">🎮</span>
-              Зіграй хоча б раз, щоб побачити статистику
+              {tFn('fun.playOnceForStats')}
             </div>
           )}
         </div>

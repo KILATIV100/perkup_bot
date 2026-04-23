@@ -240,6 +240,22 @@ export default async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, location: { ...location, posterToken: undefined } })
   })
 
+  app.put('/locations/:slug/poster-token', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const slug = String(req.params.slug)
+    const body = z.object({ token: z.string().trim().min(1) }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid token' })
+
+    try {
+      const location = await prisma.location.update({
+        where: { slug },
+        data: { posterToken: body.data.token },
+      })
+      return reply.send({ success: true, location: { ...location, posterToken: undefined } })
+    } catch {
+      return reply.status(404).send({ success: false, error: 'Location not found' })
+    }
+  })
+
   app.get('/menu/:locationSlug', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const locationSlug = String(req.params.locationSlug)
     const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
@@ -671,9 +687,12 @@ export default async function adminRoutes(app: FastifyInstance) {
     }).safeParse(req.body)
     if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
 
-    const where: any = {}
-    if (body.data.filter === 'silver') where.points = { gte: 300 }
-    else if (body.data.filter === 'gold') where.points = { gte: 1000 }
+    const where: any = {
+      isActive: true,
+      notifSpin: true,
+    }
+    if (body.data.filter === 'silver') where.level = { in: ['Silver', 'Gold', 'Platinum'] }
+    else if (body.data.filter === 'gold') where.level = { in: ['Gold', 'Platinum'] }
 
     const users = await prisma.user.findMany({
       where,
@@ -692,6 +711,7 @@ export default async function adminRoutes(app: FastifyInstance) {
           body: JSON.stringify({ chat_id: Number(u.telegramId), text: body.data.text, parse_mode: 'Markdown' }),
         })
         if (res.ok) sent += 1
+        await new Promise((resolve) => setTimeout(resolve, 50))
       } catch (err) {
         console.error('[broadcast] send failed:', (err as Error).message)
       }

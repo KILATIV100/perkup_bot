@@ -88,6 +88,9 @@ export const aiApi = {
 }
 
 export const gameApi = {
+  getStatus: () => api.get('/api/game/status'),
+  finish: (data: { type: 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'; score: number }) =>
+    api.post('/api/game/finish', data),
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
   getLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
@@ -108,6 +111,7 @@ export const adminApi = {
   getOrders: (params?: { page?: number; status?: string; locationId?: number }) => api.get('/api/admin/orders', { params }),
   getLocations: () => api.get('/api/admin/locations'),
   updateLocation: (id: number, data: any) => api.patch(`/api/admin/locations/${id}`, data),
+  setLocationPosterToken: (slug: string, token: string) => api.put(`/api/admin/locations/${encodeURIComponent(slug)}/poster-token`, { token }),
   getMenu: (locationSlug: string) => api.get(`/api/admin/menu/${locationSlug}`),
   createCategory: (locationSlug: string, name: string) => api.post(`/api/admin/menu/${locationSlug}/categories`, { name }),
   renameCategory: (locationSlug: string, oldName: string, name: string) => api.patch(`/api/admin/menu/${locationSlug}/categories`, { oldName, name }),
