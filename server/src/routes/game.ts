@@ -42,7 +42,7 @@ function getKyivDayKey(date = new Date()): string {
 function calcEarnedPoints(type: string, score: number): number {
   switch (type) {
     case 'TIC_TAC_TOE': return score >= 1 ? 5 : score >= 0.5 ? 2 : 0
-    case 'MEMORY': return score <= 30 ? 5 : score <= 60 ? 3 : score <= 90 ? 2 : 1
+    case 'MEMORY': return score <= 20 ? 5 : score <= 35 ? 4 : score <= 50 ? 3 : score <= 75 ? 2 : 1
     case 'QUIZ': return score >= 1 ? 3 : 0
     case 'WORD_PUZZLE': return Math.min(Math.floor(score), 5)
     default:
