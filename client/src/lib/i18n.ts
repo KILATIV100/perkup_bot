@@ -227,6 +227,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'fun.scoreNeeded': { uk: 'Набери {n} очків', en: 'Score {n} points' },
   'fun.claimed': { uk: 'Отримано', en: 'Claimed' },
   'fun.achieved': { uk: 'Досягнуто', en: 'Achieved' },
+  'fun.playOnceForStats': { uk: 'Зіграй хоча б раз, щоб побачити статистику', en: 'Play at least once to see stats' },
   'fun.nowPlaying': { uk: 'Грає зараз', en: 'Now playing' },
   'fun.noTracks': { uk: 'Наразі немає доступних треків', en: 'No tracks available' },
 

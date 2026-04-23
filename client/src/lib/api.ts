@@ -108,6 +108,7 @@ export const adminApi = {
   getOrders: (params?: { page?: number; status?: string; locationId?: number }) => api.get('/api/admin/orders', { params }),
   getLocations: () => api.get('/api/admin/locations'),
   updateLocation: (id: number, data: any) => api.patch(`/api/admin/locations/${id}`, data),
+  setLocationPosterToken: (slug: string, token: string) => api.put(`/api/admin/locations/${encodeURIComponent(slug)}/poster-token`, { token }),
   getMenu: (locationSlug: string) => api.get(`/api/admin/menu/${locationSlug}`),
   createCategory: (locationSlug: string, name: string) => api.post(`/api/admin/menu/${locationSlug}/categories`, { name }),
   renameCategory: (locationSlug: string, oldName: string, name: string) => api.patch(`/api/admin/menu/${locationSlug}/categories`, { oldName, name }),
