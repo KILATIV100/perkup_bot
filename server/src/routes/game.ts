@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { Prisma } from '@prisma/client'
 import { redis } from '../lib/redis'
 import { prisma } from '../lib/prisma'
 
@@ -12,6 +13,10 @@ const POINTS_THRESHOLDS = [
   { score: 5000, points: 50 },
 ]
 
+function getKyivDayKey(date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(date)
+}
+
 export default async function gameRoutes(app: FastifyInstance) {
   async function requireAuth(req: any, reply: any) {
     try { await req.jwtVerify() } catch {
@@ -24,12 +29,12 @@ export default async function gameRoutes(app: FastifyInstance) {
     const { score } = req.body as { score?: number }
     const userId: number = req.user.id
 
-    if (!score || typeof score !== 'number' || score < 0 || score > MAX_SCORE || !Number.isInteger(score)) {
+    if (typeof score !== 'number' || score < 0 || score > MAX_SCORE || !Number.isInteger(score)) {
       return reply.status(400).send({ success: false, error: 'Invalid score' })
     }
 
     // Rate limit: daily plays
-    const dayKey = new Date().toISOString().slice(0, 10)
+    const dayKey = getKyivDayKey()
     const playsKey = `game:plays:${userId}:${dayKey}`
     const plays = await redis.incr(playsKey)
     if (plays === 1) await redis.expire(playsKey, 86400)
@@ -57,32 +62,47 @@ export default async function gameRoutes(app: FastifyInstance) {
 
     // Calculate earned points
     let earnedPoints = 0
+    const unlockedThresholds: number[] = []
     for (const t of POINTS_THRESHOLDS) {
       const claimKey = `game:points:${userId}:${t.score}`
       if (score >= t.score) {
         const alreadyClaimed = await redis.get(claimKey)
         if (!alreadyClaimed) {
           earnedPoints += t.points
-          await redis.set(claimKey, '1')
+          unlockedThresholds.push(t.score)
         }
       }
     }
 
     // Award points
     if (earnedPoints > 0) {
-      const idempotencyKey = `game-coffee-jump-${userId}-${score}-${Date.now()}`
-      await prisma.$transaction([
-        prisma.user.update({ where: { id: userId }, data: { points: { increment: earnedPoints } } }),
-        prisma.pointsTransaction.create({
-          data: {
-            userId,
-            amount: earnedPoints,
-            type: 'BONUS',
-            description: `Coffee Jump: ${score} очків`,
-            idempotencyKey,
-          },
-        }),
-      ])
+      const rewardsKey = unlockedThresholds.sort((a, b) => a - b).join('-')
+      const idempotencyKey = `game-coffee-jump-${userId}-${rewardsKey}`
+      try {
+        await prisma.$transaction([
+          prisma.user.update({ where: { id: userId }, data: { points: { increment: earnedPoints } } }),
+          prisma.pointsTransaction.create({
+            data: {
+              userId,
+              amount: earnedPoints,
+              type: 'BONUS',
+              description: `Coffee Jump: ${score} очків`,
+              idempotencyKey,
+            },
+          }),
+        ])
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          earnedPoints = 0
+        } else {
+          throw error
+        }
+      }
+      if (earnedPoints > 0) {
+        for (const threshold of unlockedThresholds) {
+          await redis.set(`game:points:${userId}:${threshold}`, '1')
+        }
+      }
     }
 
     // Get rank
@@ -120,7 +140,7 @@ export default async function gameRoutes(app: FastifyInstance) {
 
     const bestScore = await redis.zscore(LEADERBOARD_KEY, String(userId))
     const rank = await redis.zrevrank(LEADERBOARD_KEY, String(userId))
-    const dayKey = new Date().toISOString().slice(0, 10)
+    const dayKey = getKyivDayKey()
     const playsToday = Number(await redis.get(`game:plays:${userId}:${dayKey}`)) || 0
 
     // Check which point thresholds are unlocked
