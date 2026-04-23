@@ -29,6 +29,13 @@ export default function FunPage() {
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [toast, setToast] = useState('')
 
+  // Скрол вгору при відкритті гри
+  useEffect(() => {
+    if (game !== 'hub') {
+      window.scrollTo({ top: 0, behavior: 'instant' })
+    }
+  }, [game])
+
   const loadStatus = useCallback(() => {
     setLoadingStatus(true)
     gameApi.getStatus()
