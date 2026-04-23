@@ -300,7 +300,7 @@ export default function FunPage() {
           ) : (
             <div className="text-center text-gray-400 py-12">
               <span className="text-4xl block mb-2">🎮</span>
-              Зіграй хоча б раз, щоб побачити статистику
+              {tFn('fun.playOnceForStats')}
             </div>
           )}
         </div>

@@ -153,6 +153,12 @@ export default function ProfilePage() {
 
       {/* Menu items */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {(stats?.completedOrders ?? 0) === 0 && (
+          <button onClick={() => navigate('/onboarding')} className="w-full text-left px-4 py-3.5 border-b border-gray-50 flex justify-between items-center active:bg-gray-50 transition-colors">
+            <span className="text-gray-700 font-medium">\u2753 \u042f\u043a \u0446\u0435 \u043f\u0440\u0430\u0446\u044e\u0454</span>
+            <span className="text-gray-300">›</span>
+          </button>
+        )}
         <button onClick={() => navigate('/bonuses')} className="w-full text-left px-4 py-3.5 border-b border-gray-50 flex justify-between items-center active:bg-gray-50 transition-colors">
           <span className="text-gray-700 font-medium">{t('profile.historyAndBonuses')}</span>
           <span className="text-gray-300">›</span>
