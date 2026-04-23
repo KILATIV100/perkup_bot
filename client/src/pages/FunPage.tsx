@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { gameApi } from '../lib/api'
 import CoffeeJumpGame from '../components/CoffeeJumpGame'
 import TicTacToe from '../games/TicTacToe'
@@ -28,6 +29,7 @@ export default function FunPage() {
   const [status, setStatus] = useState<GameStatus | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [toast, setToast] = useState('')
+  const navigate = useNavigate()
 
   // Скрол вгору при відкритті гри
   useEffect(() => {

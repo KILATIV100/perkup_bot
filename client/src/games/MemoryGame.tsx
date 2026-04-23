@@ -6,12 +6,10 @@ const EMOJIS = ['☕','🧁','🍩','🥐','🍫','🫖','🥛','🧇']
 interface Card { emoji: string; pairId: number }
 
 function makeCards(): Card[] {
-  // Кожна emoji з'являється рівно 2 рази, з однаковим pairId
   const cards: Card[] = EMOJIS.flatMap((emoji, i) => [
     { emoji, pairId: i },
     { emoji, pairId: i },
   ])
-  // Fisher-Yates shuffle
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [cards[i], cards[j]] = [cards[j], cards[i]]
@@ -32,29 +30,23 @@ interface Props { onFinish: (pts: number) => void }
 export default function MemoryGame({ onFinish }: Props) {
   const [phase, setPhase] = useState<'menu' | 'playing' | 'result'>('menu')
   const [cards, setCards] = useState<Card[]>([])
-  const [gameKey, setGameKey] = useState(0) // для reset React keys
-  const [flipped, setFlipped] = useState<number[]>([])
-  const [matched, setMatched] = useState<number[]>([]) // pairIds що знайдені
-  const [checking, setChecking] = useState(false)
-  const [moves, setMoves] = useState(0)
-  const [elapsed, setElapsed] = useState(0)
-  const [pts, setPts] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setInterval>>()
-  const startRef = useRef(0)
+  const [gameKey, setGameKey] = useState(0)
 
-  const startGame = () => {
-    clearInterval(timerRef.current)
-    setCards(makeCards())
-    setGameKey(k => k + 1)
-    setFlipped([]); setMatched([]); setChecking(false)
-    setMoves(0); setElapsed(0); setPts(0); setLoading(false)
-    setPhase('playing')
-    startRef.current = Date.now()
-    timerRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
-    }, 1000)
-  }
+  // Використовуємо refs для стану що потрібен без re-render і без stale closure
+  const flippedRef  = useRef<number[]>([])   // індекси відкритих карт
+  const matchedRef  = useRef<Set<number>>(new Set()) // pairIds знайдених пар
+  const blockRef    = useRef(false)           // блокування кліків під час анімації
+  const cardsRef    = useRef<Card[]>([])      // актуальна колода
+  const startRef    = useRef(0)
+  const timerRef    = useRef<ReturnType<typeof setInterval>>()
+
+  // Відображальний стан (тільки для UI)
+  const [flippedUI,  setFlippedUI]  = useState<number[]>([])
+  const [matchedUI,  setMatchedUI]  = useState<Set<number>>(new Set())
+  const [moves,      setMoves]      = useState(0)
+  const [elapsed,    setElapsed]    = useState(0)
+  const [pts,        setPts]        = useState(0)
+  const [loading,    setLoading]    = useState(false)
 
   const finish = useCallback(async (secs: number) => {
     clearInterval(timerRef.current)
@@ -68,44 +60,77 @@ export default function MemoryGame({ onFinish }: Props) {
     setPhase('result')
   }, [onFinish])
 
+  const startGame = () => {
+    clearInterval(timerRef.current)
+    const fresh = makeCards()
+    cardsRef.current   = fresh
+    flippedRef.current  = []
+    matchedRef.current  = new Set()
+    blockRef.current    = false
+
+    setCards(fresh)
+    setGameKey(k => k + 1)
+    setFlippedUI([])
+    setMatchedUI(new Set())
+    setMoves(0); setElapsed(0); setPts(0); setLoading(false)
+    setPhase('playing')
+
+    startRef.current = Date.now()
+    timerRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 1000)
+  }
+
   useEffect(() => () => clearInterval(timerRef.current), [])
 
+  // Клік по картці — вся логіка через refs → нуль stale closure
   const flip = useCallback((idx: number) => {
-    if (checking || flipped.includes(idx) || matched.includes(cards[idx]?.pairId) || phase !== 'playing') return
-    if (flipped.length >= 2) return
+    if (blockRef.current) return
+    if (flippedRef.current.includes(idx)) return
+    if (matchedRef.current.has(cardsRef.current[idx]?.pairId)) return
+    if (flippedRef.current.length >= 2) return
 
-    const next = [...flipped, idx]
-    setFlipped(next)
+    // Відкриваємо карту
+    const next = [...flippedRef.current, idx]
+    flippedRef.current = next
+    setFlippedUI([...next])
 
-    if (next.length === 2) {
-      setMoves(m => m + 1)
-      setChecking(true)
-      const [a, b] = next
-      if (cards[a].pairId === cards[b].pairId) {
-        // Пара знайдена!
-        const newMatched = [...matched, cards[a].pairId]
-        setTimeout(() => {
-          setMatched(newMatched)
-          setFlipped([])
-          setChecking(false)
-          // Перевіряємо завершення
-          if (newMatched.length === EMOJIS.length) {
-            const secs = Math.floor((Date.now() - startRef.current) / 1000)
-            finish(secs)
-          }
-        }, 350)
-      } else {
-        // Не пара — перевертаємо назад
-        setTimeout(() => {
-          setFlipped([])
-          setChecking(false)
-        }, 900)
-      }
+    if (next.length < 2) return  // чекаємо другу карту
+
+    // Дві карти відкриті — блокуємо та перевіряємо
+    blockRef.current = true
+    setMoves(m => m + 1)
+
+    const [a, b] = next
+    const cardA = cardsRef.current[a]
+    const cardB = cardsRef.current[b]
+
+    if (cardA.pairId === cardB.pairId) {
+      // ✅ Пара знайдена
+      setTimeout(() => {
+        matchedRef.current = new Set([...matchedRef.current, cardA.pairId])
+        flippedRef.current  = []
+        blockRef.current    = false
+        setMatchedUI(new Set(matchedRef.current))
+        setFlippedUI([])
+
+        // Завершення гри
+        if (matchedRef.current.size === EMOJIS.length) {
+          const secs = Math.floor((Date.now() - startRef.current) / 1000)
+          finish(secs)
+        }
+      }, 400)
+    } else {
+      // ❌ Не пара — перевертаємо через 900мс
+      setTimeout(() => {
+        flippedRef.current = []
+        blockRef.current   = false
+        setFlippedUI([])
+      }, 900)
     }
-  }, [checking, flipped, matched, cards, phase, finish])
+  }, [finish])
 
-  const pairsFound = matched.length
-  const totalPairs = EMOJIS.length
+  const pairsFound = matchedUI.size
   const expectedPts = calcPoints(elapsed)
 
   // ── Menu ──
@@ -145,27 +170,24 @@ export default function MemoryGame({ onFinish }: Props) {
   // ── Playing ──
   return (
     <div className="p-3">
-      {/* HUD */}
       <div className="flex items-center justify-between mb-3 px-1">
         <span className={`font-mono font-bold text-sm tabular-nums ${elapsed > 50 ? 'text-red-500' : elapsed > 35 ? 'text-amber-600' : 'text-green-600'}`}>
           ⏱ {elapsed}с
         </span>
-        <span className="text-sm font-medium text-stone-600">✅ {pairsFound}/{totalPairs}</span>
+        <span className="text-sm font-medium text-stone-600">✅ {pairsFound}/{EMOJIS.length}</span>
         <span className="text-sm text-stone-400">{moves} ходів · ~{expectedPts}б</span>
       </div>
 
-      {/* Cards — key={gameKey} щоб React точно перемальовував при рестарті */}
       <div key={gameKey} className="grid grid-cols-4 gap-2 max-w-[340px] mx-auto">
         {cards.map((card, i) => {
-          const isFlipped = flipped.includes(i)
-          const isMatched = matched.includes(card.pairId)
-          const show = isFlipped || isMatched
+          const isFlipped  = flippedUI.includes(i)
+          const isMatched  = matchedUI.has(card.pairId)
+          const show       = isFlipped || isMatched
           return (
             <button
               key={i}
               onClick={() => flip(i)}
-              disabled={isMatched || (checking && !isFlipped)}
-              className={`h-[70px] rounded-xl text-2xl border-2 transition-all duration-300 select-none ${
+              className={`h-[72px] rounded-xl text-2xl border-2 transition-all duration-300 select-none ${
                 isMatched
                   ? 'bg-green-50 border-green-300 opacity-60 scale-95'
                   : isFlipped

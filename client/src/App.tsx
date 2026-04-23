@@ -7,6 +7,7 @@ import OnboardingPage from './pages/OnboardingPage'
 import BonusesPage from './pages/BonusesPage'
 import AiPage from './pages/AiPage'
 import FunPage from './pages/FunPage'
+import LeaderboardPage from './pages/LeaderboardPage'
 import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderStatusPage from './pages/OrderStatusPage'
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/menu" replace />} />
           <Route path="/menu" element={<MenuPage />} />
           <Route path="/fun" element={<FunPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/radio" element={<Navigate to="/fun" replace />} />
           <Route path="/ai" element={<AiPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/menu" replace /> : <LoginPage />} />

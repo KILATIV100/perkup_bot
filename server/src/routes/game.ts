@@ -28,7 +28,7 @@ const gameFinishSchema = z.object({
 
 // Cooldown per game type (hours)
 const GAME_COOLDOWN: Record<string, number> = {
-  QUIZ: 24,
+  QUIZ: 2,   // 2 год між питаннями, max 10/день контролюється загальним лімітом
   TIC_TAC_TOE: 4,
   MEMORY: 4,
   WORD_PUZZLE: 4,
@@ -79,8 +79,9 @@ export default async function gameRoutes(app: FastifyInstance) {
       if (!lastPlayed) {
         canPlay[type] = true
       } else if (type === 'QUIZ') {
-        // Quiz: once per calendar day
-        canPlay[type] = lastPlayed < dayKey
+        // Quiz: cooldown 2 год
+        const hoursSinceQ = (Date.now() - Number(lastPlayed)) / 3600000
+        canPlay[type] = hoursSinceQ >= 2
       } else {
         const cooldownHours = GAME_COOLDOWN[type] || GAME_COOLDOWN.DEFAULT
         const hoursSince = (Date.now() - Number(lastPlayed)) / 3600000
@@ -122,9 +123,11 @@ export default async function gameRoutes(app: FastifyInstance) {
     const lastKey = `game:last:${userId}:${type}`
     const lastPlayed = await redis.get(lastKey)
     if (lastPlayed) {
+      // QUIZ: cooldown 2 год між питаннями
       if (type === 'QUIZ') {
-        if (lastPlayed >= dayKey) {
-          return reply.status(429).send({ success: false, error: 'COOLDOWN', hoursLeft: 24 })
+        const hoursSinceQuiz = (Date.now() - Number(lastPlayed)) / 3600000
+        if (hoursSinceQuiz < 2) {
+          return reply.status(429).send({ success: false, error: 'COOLDOWN', hoursLeft: Math.ceil(2 - hoursSinceQuiz) })
         }
       } else {
         const cooldownHours = GAME_COOLDOWN[type] || GAME_COOLDOWN.DEFAULT
@@ -177,7 +180,7 @@ export default async function gameRoutes(app: FastifyInstance) {
 
     // Save last played timestamp
     if (type === 'QUIZ') {
-      await redis.set(lastKey, dayKey, 'EX', 86400 * 2)
+      await redis.set(lastKey, String(Date.now()), 'EX', 7200 + 3600)
     } else {
       const cooldownSecs = (GAME_COOLDOWN[type] || 4) * 3600
       await redis.set(lastKey, String(Date.now()), 'EX', cooldownSecs + 3600)
@@ -279,6 +282,53 @@ export default async function gameRoutes(app: FastifyInstance) {
       totalPlaysToday: plays,
     })
   })
+
+  // GET /api/game/leaderboard?type=points|games
+  app.get('/leaderboard', async (req: any, reply) => {
+    const type = (req.query?.type as string) || 'points'
+
+    if (type === 'games') {
+      // Топ по зіграних іграх (з pointsTransactions типу GAME)
+      const top = await prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, firstName: true, lastName: true, level: true,
+          _count: { select: { pointsTransactions: { where: { type: 'GAME' } } } }
+        },
+        orderBy: { pointsTransactions: { _count: 'desc' } },
+        take: 20,
+      })
+      return reply.send({
+        success: true,
+        type: 'games',
+        leaderboard: top.map((u, i) => ({
+          rank: i + 1,
+          name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+          level: u.level,
+          gamesPlayed: u._count.pointsTransactions,
+        }))
+      })
+    }
+
+    // Топ по балах
+    const top = await prisma.user.findMany({
+      where: { isActive: true, points: { gt: 0 } },
+      select: { id: true, firstName: true, lastName: true, points: true, level: true },
+      orderBy: { points: 'desc' },
+      take: 20,
+    })
+    return reply.send({
+      success: true,
+      type: 'points',
+      leaderboard: top.map((u, i) => ({
+        rank: i + 1,
+        name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+        points: u.points,
+        level: u.level,
+      }))
+    })
+  })
+
 
   // GET /api/game/coffee-jump/leaderboard
   app.get('/coffee-jump/leaderboard', async (_req, reply) => {

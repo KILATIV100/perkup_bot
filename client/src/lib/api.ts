@@ -93,6 +93,8 @@ export const gameApi = {
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
   getStatus: () => api.get('/api/game/status'),
   finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
+  getLeaderboardPoints: () => api.get('/api/game/leaderboard?type=points'),
+  getLeaderboardGames: () => api.get('/api/game/leaderboard?type=games'),
 }
 
 export const radioApi = {
