@@ -61,7 +61,7 @@ export default function TicTacToe({ onFinish }: Props) {
     setLoading(true)
     const score = r === 'win' ? 1 : r === 'draw' ? 0.5 : 0
     try {
-      const res = await gameApi.finishGame('TIC_TAC_TOE', score)
+      const res = await gameApi.finish('TIC_TAC_TOE', score)
       const earned = res.data?.pointsWon || res.data?.earnedPoints || 0
       setPts(earned)
     } catch { setPts(0) }

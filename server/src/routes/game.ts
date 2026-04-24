@@ -17,7 +17,7 @@ const DAILY_GENERIC_GAME_LIMIT = 30
 const GAME_POINT_CAP_PER_DAY = 60
 
 const gameFinishSchema = z.object({
-  type: z.enum(['TIC_TAC_TOE', 'PERKIE_CATCH', 'BARISTA_RUSH', 'MEMORY_COFFEE', 'PERKIE_JUMP']),
+  type: z.enum(['TIC_TAC_TOE', 'MEMORY', 'QUIZ', 'WORD_PUZZLE', 'PERKIE_CATCH', 'BARISTA_RUSH', 'MEMORY_COFFEE', 'PERKIE_JUMP']),
   score: z.number().int().min(0).max(100000),
 })
 
