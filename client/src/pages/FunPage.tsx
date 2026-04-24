@@ -17,6 +17,13 @@ interface MyStats {
   playsLimit: number
   rewards: { score: number; points: number; claimed: boolean }[]
 }
+interface GameStatus {
+  date: string
+  playsToday: number
+  playsLimit: number
+  pointsEarnedToday: number
+  pointsCapToday: number
+}
 
 interface GameStatus {
   date: string
@@ -59,7 +66,7 @@ export default function FunPage() {
     } catch {
       setLastResult(null)
     }
-  }, [])
+  }, [game])
 
   const loadLeaderboard = useCallback(async () => {
     setLbLoading(true)
@@ -72,6 +79,8 @@ export default function FunPage() {
       setLbLoading(false)
     }
   }, [])
+
+  useEffect(() => { loadStatus() }, [game, loadStatus])
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true)
@@ -136,7 +145,7 @@ export default function FunPage() {
               tab === t.key ? 'text-coffee-600 border-b-2 border-coffee-500' : 'text-gray-400'
             }`}
           >
-            {t.label}
+            ←
           </button>
         ))}
       </div>
@@ -235,19 +244,38 @@ export default function FunPage() {
                 </div>
               ))}
             </div>
-          )}
+          </div>
         </div>
-      )}
 
       {tab === 'rewards' && (
         <div className="flex-1 p-4 pb-24">
           <h2 className="text-lg font-bold text-coffee-800 mb-3">🎁 Нагороди гри</h2>
 
-          {statsLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="skeleton h-16 rounded-xl" />
-              ))}
+  // ── Хаб ────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-[#FAF7F4] pb-28">
+
+      {/* Hero */}
+      <div className="bg-gradient-to-br from-amber-900 via-amber-800 to-stone-800 px-5 pt-6 pb-8">
+        <h1 className="text-white text-xl font-bold tracking-tight">🎮 Fun Zone</h1>
+        <p className="text-amber-200 text-sm mt-0.5">Грай і заробляй бали за замовлення</p>
+
+        {/* Daily progress */}
+        <div className="mt-4 bg-white/10 rounded-2xl p-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-amber-100 text-xs font-medium">Денний ліміт балів</span>
+            <span className="text-white text-sm font-bold">{dailyUsed} / {dailyMax}</span>
+          </div>
+          <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-300 rounded-full transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          {status && (
+            <div className="flex justify-between mt-3 text-xs text-amber-200">
+              <span>зароблено сьогодні</span>
+              <span className="text-white font-semibold">{dailyMax - dailyUsed} залишилось</span>
             </div>
           ) : stats ? (
             <>
@@ -264,7 +292,6 @@ export default function FunPage() {
                   <div className="text-lg font-bold text-coffee-600">{stats.playsToday}/{stats.playsLimit}</div>
                   <div className="text-[10px] text-gray-400">Ігор сьогодні</div>
                 </div>
-              </div>
 
               <h3 className="font-bold text-gray-700 mb-2 text-sm">Пороги нагород</h3>
               <div className="space-y-2">

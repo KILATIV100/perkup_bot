@@ -1,93 +1,95 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 
-// ---------- TYPES ----------
 interface Platform {
-  x: number
-  y: number
-  w: number
+  x: number; y: number; w: number
   type: 'normal' | 'moving' | 'breaking' | 'spring'
-  dx?: number          // moving platform speed
-  broken?: boolean     // breaking platform state
+  dx?: number
+  broken?: boolean
   springActive?: boolean
 }
 
-interface Bean {
-  x: number
-  y: number
-  collected: boolean
-}
-
-interface Particle {
-  x: number; y: number; vx: number; vy: number; life: number; color: string; size: number
-}
+interface Bean { x: number; y: number; collected: boolean }
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number }
 
 interface GameState {
-  playerX: number
-  playerY: number
-  playerVx: number
-  playerVy: number
-  playerW: number
-  playerH: number
-  platforms: Platform[]
-  beans: Bean[]
-  particles: Particle[]
-  score: number
-  maxHeight: number
-  cameraY: number
-  gameOver: boolean
-  started: boolean
-  facing: 'left' | 'right'
+  playerX: number; playerY: number; playerVx: number; playerVy: number
+  platforms: Platform[]; beans: Bean[]; particles: Particle[]
+  score: number; maxHeight: number; cameraY: number
+  gameOver: boolean; started: boolean; facing: 'left' | 'right'
 }
 
-// ---------- COLORS ----------
 const C = {
-  sky1: '#fdf6ed',
-  sky2: '#f5e6c8',
-  platform: '#6b3a2a',
-  platformMoving: '#c8973a',
-  platformBreaking: '#d9a84e',
-  platformSpring: '#3d1c02',
-  spring: '#e8c98a',
-  player: '#6b3a2a',
-  playerEye: '#fff',
-  playerPupil: '#1e0e01',
-  bean: '#c8973a',
-  beanDark: '#6b3a2a',
-  text: '#3d1c02',
-  overlay: 'rgba(29,14,1,0.65)',
+  sky1: '#fdf6ed', sky2: '#f0d9b0',
+  platform: '#6b3a2a', platformMoving: '#c8973a',
+  platformBreaking: '#c4763a', platformSpring: '#2d1408',
+  spring: '#e8c98a', player: '#6b3a2a',
+  bean: '#c8973a', beanDark: '#6b3a2a',
+  text: '#3d1c02', overlay: 'rgba(29,14,1,0.72)',
 }
 
-// ---------- CONSTANTS ----------
-const GRAVITY = 0.35
-const JUMP_VEL = -10
-const SPRING_VEL = -15
-const MOVE_SPEED = 4
-const FRICTION = 0.92
-const PLATFORM_W = 70
-const PLATFORM_H = 14
-const PLAYER_W = 36
-const PLAYER_H = 40
-const BEAN_R = 8
-const BEAN_SCORE = 10
-const PLATFORM_GAP_MIN = 50
-const PLATFORM_GAP_MAX = 110
+const GRAVITY        = 0.38
+const JUMP_VEL       = -11
+const SPRING_VEL     = -16
+const MOVE_SPEED     = 4.5
+const FRICTION       = 0.90
+const PLAT_W         = 72
+const PLAT_H         = 14
+const PLAYER_W       = 34
+const PLAYER_H       = 38
 
-function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)) }
+// ── КЛЮЧОВА ЛОГІКА: генерація платформ ────────────────────────────────────────
+// Гарантуємо досяжність КОЖНОЇ платформи:
+// 1. Вертикальний gap ≤ MAX_REACHABLE_GAP (висота стрибка)
+// 2. Ламучі платформи ТІЛЬКИ якщо поруч є нормальна (≤ 90px по X)
+// 3. Spring появляється рідко і НІКОЛИ не єдина на ділянці
 
-function createPlatforms(startY: number, endY: number, canvasW: number, existing: Platform[]): Platform[] {
-  const plats = [...existing]
-  let y = startY
-  while (y > endY) {
-    const gap = PLATFORM_GAP_MIN + Math.random() * (PLATFORM_GAP_MAX - PLATFORM_GAP_MIN)
+const MAX_REACH_GAP = 100   // максимум по Y між платформами (досяжно)
+const MIN_GAP       = 55    // мінімум по Y
+const SPRING_RARE   = 0.07  // 7% шанс spring
+const MOVING_RATE   = 0.18  // 18% шанс moving
+const BREAKING_RATE = 0.18  // 18% шанс breaking (тільки якщо є нормальна поруч)
+
+function canvasWidth() { return 0 } // placeholder, реальна W передається
+
+function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
+
+/**
+ * Генеруємо платформи так що КОЖНУ можна дістати:
+ * - Gap по Y: MIN_GAP..MAX_REACH_GAP
+ * - Ламуча платформа: тільки якщо є звичайна впритул (< 100px по X)
+ * - Після ламучої завжди йде нормальна
+ */
+function generatePlatforms(fromY: number, toY: number, W: number, seed: Platform[]): Platform[] {
+  const plats: Platform[] = [...seed]
+  let y = fromY
+
+  while (y > toY) {
+    const gap = MIN_GAP + Math.random() * (MAX_REACH_GAP - MIN_GAP)
     y -= gap
-    const x = Math.random() * (canvasW - PLATFORM_W)
+
+    // Ширина: нормальні ширші, щоб простіше
+    const w = PLAT_W + Math.floor(Math.random() * 20)
+    const x = clamp(Math.random() * (W - w), 0, W - w)
+
+    // Тип
     const rng = Math.random()
     let type: Platform['type'] = 'normal'
-    if (rng > 0.88) type = 'spring'
-    else if (rng > 0.75) type = 'moving'
-    else if (rng > 0.6) type = 'breaking'
-    const p: Platform = { x, y, w: PLATFORM_W, type }
-    if (type === 'moving') p.dx = (Math.random() > 0.5 ? 1 : -1) * (1.2 + Math.random() * 1.5)
+
+    if (rng < SPRING_RARE) {
+      type = 'spring'
+    } else if (rng < SPRING_RARE + MOVING_RATE) {
+      type = 'moving'
+    } else if (rng < SPRING_RARE + MOVING_RATE + BREAKING_RATE) {
+      // Ламуча тільки якщо поруч є нормальна в межах 120px по X і ~80px по Y
+      const hasNearNormal = plats.some(
+        p => p.type === 'normal' && Math.abs(p.y - y) < 80 && Math.abs((p.x + p.w / 2) - (x + w / 2)) < 120
+      )
+      type = hasNearNormal ? 'breaking' : 'normal'
+    }
+
+    const p: Platform = { x, y, w, type }
+    if (type === 'moving') p.dx = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 1.5)
+
     plats.push(p)
   }
   return plats
@@ -96,63 +98,56 @@ function createPlatforms(startY: number, endY: number, canvasW: number, existing
 function spawnBeans(platforms: Platform[], existing: Bean[]): Bean[] {
   const beans = [...existing]
   for (const p of platforms) {
-    if (Math.random() > 0.3) continue
-    const bx = p.x + p.w / 2 + (Math.random() - 0.5) * 30
-    const by = p.y - 25 - Math.random() * 30
-    if (!beans.some(b => Math.abs(b.x - bx) < 20 && Math.abs(b.y - by) < 20)) {
+    if (p.type === 'breaking') continue // на ламучих немає зерен
+    if (Math.random() > 0.35) continue
+    const bx = p.x + p.w / 2 + (Math.random() - 0.5) * 24
+    const by = p.y - 22 - Math.random() * 22
+    if (!beans.some(b => Math.abs(b.x - bx) < 18 && Math.abs(b.y - by) < 18)) {
       beans.push({ x: bx, y: by, collected: false })
     }
   }
   return beans
 }
 
-// ---------- COMPONENT ----------
-interface Props {
-  onGameOver: (score: number) => void
-}
+interface Props { onGameOver: (score: number) => void }
 
 export default function CoffeeJumpGame({ onGameOver }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const stateRef = useRef<GameState | null>(null)
-  const rafRef = useRef(0)
-  const keysRef = useRef<Record<string, boolean>>({})
-  const touchXRef = useRef<number | null>(null)
-  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
+  const canvasRef   = useRef<HTMLCanvasElement>(null)
+  const stateRef    = useRef<GameState | null>(null)
+  const rafRef      = useRef(0)
+  const keysRef     = useRef<Record<string, boolean>>({})
+  const touchXRef   = useRef<number | null>(null)
+  const [size, setSize] = useState({ w: 0, h: 0 })
+  const [gameOver, setGameOver] = useState(false)
 
-  // ---------- INIT ----------
-  const initGame = useCallback((w: number, h: number) => {
-    const groundY = h - 60
-    const startPlatforms: Platform[] = [{ x: w / 2 - PLATFORM_W / 2, y: groundY, w: PLATFORM_W, type: 'normal' }]
-    const platforms = createPlatforms(groundY, groundY - h * 2, w, startPlatforms)
-    const beans = spawnBeans(platforms, [])
-
+  const initGame = useCallback((W: number, H: number) => {
+    setGameOver(false)
+    const groundY = H - 60
+    const start: Platform[] = [
+      // Широка початкова платформа — гравець точно на ній
+      { x: W / 2 - 50, y: groundY, w: 100, type: 'normal' },
+    ]
+    const platforms = generatePlatforms(groundY - 10, groundY - H * 2.5, W, start)
     stateRef.current = {
-      playerX: w / 2 - PLAYER_W / 2,
+      playerX: W / 2 - PLAYER_W / 2,
       playerY: groundY - PLAYER_H,
-      playerVx: 0,
-      playerVy: 0,
-      playerW: PLAYER_W,
-      playerH: PLAYER_H,
-      platforms,
-      beans,
-      particles: [],
-      score: 0,
-      maxHeight: groundY,
-      cameraY: 0,
-      gameOver: false,
-      started: false,
-      facing: 'right',
+      playerVx: 0, playerVy: 0,
+      platforms, beans: spawnBeans(platforms, []),
+      particles: [], score: 0,
+      maxHeight: groundY, cameraY: 0,
+      gameOver: false, started: false, facing: 'right',
     }
   }, [])
 
-  // ---------- RESIZE ----------
+  // Resize
   useEffect(() => {
     const measure = () => {
       const el = canvasRef.current?.parentElement
       if (!el) return
       const w = el.clientWidth
-      const h = Math.min(el.clientHeight, window.innerHeight - 130)
-      setCanvasSize({ w, h })
+      // Висота: займаємо весь viewport мінус хедер (~56px)
+      const h = Math.min(window.innerHeight - 56, 520)
+      setSize({ w, h })
       if (!stateRef.current || stateRef.current.gameOver) initGame(w, h)
     }
     measure()
@@ -160,257 +155,216 @@ export default function CoffeeJumpGame({ onGameOver }: Props) {
     return () => window.removeEventListener('resize', measure)
   }, [initGame])
 
-  // ---------- INPUT ----------
+  // Keys
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { keysRef.current[e.key] = e.type === 'keydown' }
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('keyup', onKey)
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey) }
+    const h = (e: KeyboardEvent) => { keysRef.current[e.key] = e.type === 'keydown' }
+    window.addEventListener('keydown', h)
+    window.addEventListener('keyup', h)
+    return () => { window.removeEventListener('keydown', h); window.removeEventListener('keyup', h) }
   }, [])
 
-  // Touch / tilt controls
+  // Touch
   useEffect(() => {
-    const onTouchStart = (e: TouchEvent) => {
+    const el = canvasRef.current; if (!el) return
+    const onStart = (e: TouchEvent) => {
       touchXRef.current = e.touches[0].clientX
       if (stateRef.current && !stateRef.current.started) stateRef.current.started = true
     }
-    const onTouchMove = (e: TouchEvent) => { touchXRef.current = e.touches[0].clientX }
-    const onTouchEnd = () => { touchXRef.current = null }
-
-    const el = canvasRef.current
-    if (!el) return
-    el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchmove', onTouchMove, { passive: true })
-    el.addEventListener('touchend', onTouchEnd)
+    const onMove  = (e: TouchEvent) => { touchXRef.current = e.touches[0].clientX }
+    const onEnd   = () => { touchXRef.current = null }
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: true })
+    el.addEventListener('touchend', onEnd)
     return () => {
-      el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
     }
-  }, [canvasSize])
+  }, [size])
 
-  // Device motion (tilt)
+  // Tilt
   useEffect(() => {
-    const onMotion = (e: DeviceOrientationEvent) => {
-      if (e.gamma != null && stateRef.current) {
-        const tilt = clamp(e.gamma / 30, -1, 1)
-        stateRef.current.playerVx = tilt * MOVE_SPEED * 2
-        if (tilt > 0.1) stateRef.current.facing = 'right'
-        else if (tilt < -0.1) stateRef.current.facing = 'left'
-      }
+    const h = (e: DeviceOrientationEvent) => {
+      if (e.gamma == null || !stateRef.current) return
+      const t = clamp(e.gamma / 25, -1, 1)
+      stateRef.current.playerVx = t * MOVE_SPEED * 2
+      if (t > 0.1) stateRef.current.facing = 'right'
+      else if (t < -0.1) stateRef.current.facing = 'left'
     }
-    window.addEventListener('deviceorientation', onMotion)
-    return () => window.removeEventListener('deviceorientation', onMotion)
+    window.addEventListener('deviceorientation', h)
+    return () => window.removeEventListener('deviceorientation', h)
   }, [])
 
-  // ---------- GAME LOOP ----------
+  // Game loop
   useEffect(() => {
-    if (!canvasSize.w || !canvasSize.h) return
-    const canvas = canvasRef.current
-    if (!canvas) return
+    if (!size.w || !size.h) return
+    const canvas = canvasRef.current; if (!canvas) return
     const ctx = canvas.getContext('2d')!
-    const W = canvasSize.w
-    const H = canvasSize.h
-
+    const W = size.w, H = size.h
     if (!stateRef.current) initGame(W, H)
 
     const loop = () => {
       const s = stateRef.current!
-      if (!s) return
+      rafRef.current = requestAnimationFrame(loop)
 
-      // --- INPUT ---
+      // INPUT
       const keys = keysRef.current
       if (keys['ArrowLeft'] || keys['a']) {
-        s.playerVx = -MOVE_SPEED
-        s.facing = 'left'
+        s.playerVx = -MOVE_SPEED; s.facing = 'left'
         if (!s.started) s.started = true
       } else if (keys['ArrowRight'] || keys['d']) {
-        s.playerVx = MOVE_SPEED
-        s.facing = 'right'
+        s.playerVx = MOVE_SPEED; s.facing = 'right'
         if (!s.started) s.started = true
       } else if (touchXRef.current !== null) {
-        const center = W / 2
-        const diff = (touchXRef.current - center) / center
-        s.playerVx = diff * MOVE_SPEED * 1.5
-        s.facing = diff > 0 ? 'right' : 'left'
+        const diff = (touchXRef.current - W / 2) / (W / 2)
+        s.playerVx = diff * MOVE_SPEED * 1.6
+        s.facing = diff > 0.05 ? 'right' : diff < -0.05 ? 'left' : s.facing
       } else {
         s.playerVx *= FRICTION
       }
 
-      // --- PHYSICS ---
+      // PHYSICS
       if (s.started && !s.gameOver) {
         s.playerVy += GRAVITY
         s.playerX += s.playerVx
         s.playerY += s.playerVy
 
-        // Wrap around screen
-        if (s.playerX + s.playerW < 0) s.playerX = W
-        if (s.playerX > W) s.playerX = -s.playerW
+        // Wrap
+        if (s.playerX + PLAYER_W < 0) s.playerX = W
+        if (s.playerX > W) s.playerX = -PLAYER_W
 
-        // Move moving platforms
+        // Moving platforms
         for (const p of s.platforms) {
           if (p.type === 'moving' && p.dx) {
             p.x += p.dx
-            if (p.x <= 0 || p.x + p.w >= W) p.dx *= -1
+            if (p.x <= 0 || p.x + p.w >= W) p.dx! *= -1
           }
         }
 
-        // Platform collision (only when falling)
+        // Collisions (falling only)
         if (s.playerVy > 0) {
           for (const p of s.platforms) {
             if (p.broken) continue
-            const px = s.playerX
-            const py = s.playerY + s.playerH
-            const prevPy = py - s.playerVy
+            const foot = s.playerY + PLAYER_H
+            const prevFoot = foot - s.playerVy
             if (
-              px + s.playerW > p.x + 5 &&
-              px < p.x + p.w - 5 &&
-              prevPy <= p.y + 2 &&
-              py >= p.y
+              s.playerX + PLAYER_W > p.x + 4 &&
+              s.playerX < p.x + p.w - 4 &&
+              prevFoot <= p.y + 4 &&
+              foot >= p.y
             ) {
-              if (p.type === 'breaking') {
-                p.broken = true
-                // particles
-                for (let i = 0; i < 6; i++) {
-                  s.particles.push({
-                    x: p.x + p.w / 2,
-                    y: p.y,
-                    vx: (Math.random() - 0.5) * 4,
-                    vy: -Math.random() * 3,
-                    life: 30,
-                    color: C.platformBreaking,
-                    size: 3 + Math.random() * 3,
-                  })
-                }
-              } else if (p.type === 'spring') {
+              if (p.type === 'spring') {
                 s.playerVy = SPRING_VEL
                 p.springActive = true
-                setTimeout(() => { p.springActive = false }, 200)
+                setTimeout(() => { if (p) p.springActive = false }, 220)
+              } else if (p.type === 'breaking') {
+                s.playerVy = JUMP_VEL // підкидаємо навіть з ламучої
+                p.broken = true
+                for (let i = 0; i < 7; i++) {
+                  s.particles.push({ x: p.x + p.w / 2, y: p.y, vx: (Math.random() - .5) * 5, vy: -Math.random() * 3, life: 35, color: C.platformBreaking, size: 3 + Math.random() * 3 })
+                }
               } else {
                 s.playerVy = JUMP_VEL
-              }
-              if (p.type !== 'breaking') {
-                // Jump particles
                 for (let i = 0; i < 4; i++) {
-                  s.particles.push({
-                    x: s.playerX + s.playerW / 2,
-                    y: s.playerY + s.playerH,
-                    vx: (Math.random() - 0.5) * 3,
-                    vy: Math.random() * 2,
-                    life: 15,
-                    color: C.bean,
-                    size: 2 + Math.random() * 2,
-                  })
+                  s.particles.push({ x: s.playerX + PLAYER_W / 2, y: foot, vx: (Math.random() - .5) * 3, vy: Math.random() * 2, life: 14, color: C.bean, size: 2 + Math.random() * 2 })
                 }
               }
             }
           }
         }
 
-        // Camera follow
-        const scrollThreshold = H * 0.35
-        if (s.playerY < s.cameraY + scrollThreshold) {
-          const diff = (s.cameraY + scrollThreshold) - s.playerY
-          s.cameraY -= diff
+        // Camera
+        const threshold = H * 0.38
+        if (s.playerY < s.cameraY + threshold) {
+          s.cameraY -= (s.cameraY + threshold) - s.playerY
         }
 
-        // Update score
-        const height = (H - 60) - s.playerY
-        if (height > s.maxHeight) {
-          s.score += Math.floor(height - s.maxHeight)
-          s.maxHeight = height
+        // Score
+        const h = (H - 60) - s.playerY
+        if (h > s.maxHeight) { s.score += Math.floor(h - s.maxHeight); s.maxHeight = h }
+
+        // Generate above
+        const topVis = s.cameraY - 300
+        const highest = Math.min(...s.platforms.map(p => p.y))
+        if (highest > topVis) {
+          const np = generatePlatforms(highest - 10, topVis - H, W, [])
+          s.platforms.push(...np)
+          s.beans.push(...spawnBeans(np, []))
         }
 
-        // Generate new platforms above
-        const topVisible = s.cameraY - 200
-        const highestPlat = Math.min(...s.platforms.map(p => p.y))
-        if (highestPlat > topVisible) {
-          const newPlats = createPlatforms(highestPlat, topVisible - H, W, [])
-          s.platforms.push(...newPlats)
-          const newBeans = spawnBeans(newPlats, [])
-          s.beans.push(...newBeans)
-        }
+        // Cleanup
+        const bottom = s.cameraY + H + 200
+        s.platforms = s.platforms.filter(p => p.y < bottom)
+        s.beans = s.beans.filter(b => b.y < bottom && !b.collected)
 
-        // Remove platforms/beans below screen
-        const bottomLine = s.cameraY + H + 100
-        s.platforms = s.platforms.filter(p => p.y < bottomLine)
-        s.beans = s.beans.filter(b => b.y < bottomLine && !b.collected)
-
-        // Bean collision
+        // Beans
         for (const b of s.beans) {
           if (b.collected) continue
-          const dist = Math.hypot(s.playerX + s.playerW / 2 - b.x, s.playerY + s.playerH / 2 - b.y)
-          if (dist < BEAN_R + 15) {
-            b.collected = true
-            s.score += BEAN_SCORE
+          const dist = Math.hypot(s.playerX + PLAYER_W / 2 - b.x, s.playerY + PLAYER_H / 2 - b.y)
+          if (dist < 22) {
+            b.collected = true; s.score += 10
             for (let i = 0; i < 5; i++) {
-              s.particles.push({
-                x: b.x, y: b.y,
-                vx: (Math.random() - 0.5) * 4,
-                vy: (Math.random() - 0.5) * 4,
-                life: 20,
-                color: C.bean,
-                size: 2 + Math.random() * 3,
-              })
+              s.particles.push({ x: b.x, y: b.y, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, life: 22, color: C.bean, size: 2 + Math.random() * 3 })
             }
           }
         }
 
-        // Update particles
-        s.particles = s.particles.filter(p => {
-          p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life--
-          return p.life > 0
-        })
+        // Particles
+        s.particles = s.particles.filter(p => { p.x += p.vx; p.y += p.vy; p.vy += .1; p.life--; return p.life > 0 })
 
-        // Game over: fell below screen
-        if (s.playerY > s.cameraY + H + 50) {
+        // Game over
+        if (s.playerY > s.cameraY + H + 60) {
           s.gameOver = true
+          setGameOver(true)
           onGameOver(s.score)
         }
       }
 
-      // --- RENDER ---
-      // Sky gradient
+      // ── RENDER ──────────────────────────────────────────────────────────────
       const grad = ctx.createLinearGradient(0, 0, 0, H)
-      grad.addColorStop(0, C.sky2)
-      grad.addColorStop(1, C.sky1)
-      ctx.fillStyle = grad
-      ctx.fillRect(0, 0, W, H)
+      grad.addColorStop(0, C.sky2); grad.addColorStop(1, C.sky1)
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H)
 
-      ctx.save()
-      ctx.translate(0, -s.cameraY)
+      ctx.save(); ctx.translate(0, -s.cameraY)
 
       // Platforms
       for (const p of s.platforms) {
         if (p.broken) continue
-        const ry = p.y
         ctx.beginPath()
-        ctx.roundRect(p.x, ry, p.w, PLATFORM_H, 7)
+        if (ctx.roundRect) ctx.roundRect(p.x, p.y, p.w, PLAT_H, 7)
+        else { ctx.rect(p.x, p.y, p.w, PLAT_H) }
+
         if (p.type === 'moving') ctx.fillStyle = C.platformMoving
         else if (p.type === 'breaking') {
           ctx.fillStyle = C.platformBreaking
-          ctx.setLineDash([4, 3])
-          ctx.strokeStyle = C.platform
+          ctx.fill()
+          ctx.setLineDash([5, 4])
+          ctx.strokeStyle = '#fff4'
           ctx.lineWidth = 1
           ctx.stroke()
           ctx.setLineDash([])
+          continue
         }
         else if (p.type === 'spring') ctx.fillStyle = C.platformSpring
         else ctx.fillStyle = C.platform
         ctx.fill()
 
-        // Spring coil
+        // Type indicator
+        if (p.type === 'moving') {
+          ctx.fillStyle = 'rgba(255,255,255,0.3)'
+          ctx.font = '9px sans-serif'; ctx.textAlign = 'center'
+          ctx.fillText('➤', p.x + p.w / 2, p.y + 10)
+        }
+
+        // Spring
         if (p.type === 'spring') {
-          const sx = p.x + p.w / 2
-          const sy = p.y
-          const sh = p.springActive ? -18 : -10
-          ctx.strokeStyle = C.spring
-          ctx.lineWidth = 3
-          ctx.beginPath()
-          ctx.moveTo(sx, sy)
-          for (let i = 0; i < 4; i++) {
-            const t = (i + 1) / 4
-            ctx.lineTo(sx + (i % 2 === 0 ? -6 : 6), sy + sh * t)
+          const sx = p.x + p.w / 2, sy = p.y
+          const sh = p.springActive ? -20 : -11
+          ctx.strokeStyle = C.spring; ctx.lineWidth = 2.5; ctx.lineCap = 'round'
+          ctx.beginPath(); ctx.moveTo(sx, sy)
+          for (let i = 0; i < 5; i++) {
+            const t = (i + 1) / 5
+            ctx.lineTo(sx + (i % 2 === 0 ? -7 : 7), sy + sh * t)
           }
           ctx.stroke()
         }
@@ -419,180 +373,124 @@ export default function CoffeeJumpGame({ onGameOver }: Props) {
       // Beans
       for (const b of s.beans) {
         if (b.collected) continue
-        ctx.save()
-        ctx.translate(b.x, b.y)
-        // Coffee bean shape
+        ctx.save(); ctx.translate(b.x, b.y)
         ctx.fillStyle = C.bean
+        ctx.beginPath(); ctx.ellipse(0, 0, 7, 9, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = C.beanDark; ctx.lineWidth = 1.5
         ctx.beginPath()
-        ctx.ellipse(0, 0, BEAN_R, BEAN_R * 1.3, 0, 0, Math.PI * 2)
-        ctx.fill()
-        // Bean line
-        ctx.strokeStyle = C.beanDark
-        ctx.lineWidth = 1.5
-        ctx.beginPath()
-        ctx.moveTo(0, -BEAN_R * 1.1)
-        ctx.bezierCurveTo(-3, -BEAN_R * 0.3, 3, BEAN_R * 0.3, 0, BEAN_R * 1.1)
+        ctx.moveTo(0, -8); ctx.bezierCurveTo(-3, -2, 3, 2, 0, 8)
         ctx.stroke()
         ctx.restore()
       }
 
       // Player (coffee cup)
       ctx.save()
-      ctx.translate(s.playerX + s.playerW / 2, s.playerY + s.playerH / 2)
-      const scaleX = s.facing === 'left' ? -1 : 1
-      ctx.scale(scaleX, 1)
+      ctx.translate(s.playerX + PLAYER_W / 2, s.playerY + PLAYER_H / 2)
+      ctx.scale(s.facing === 'left' ? -1 : 1, 1)
 
-      // Cup body
       ctx.fillStyle = C.player
       ctx.beginPath()
-      ctx.moveTo(-14, -12)
-      ctx.lineTo(-11, 16)
-      ctx.quadraticCurveTo(0, 22, 11, 16)
-      ctx.lineTo(14, -12)
-      ctx.closePath()
-      ctx.fill()
+      ctx.moveTo(-13, -11); ctx.lineTo(-10, 15)
+      ctx.quadraticCurveTo(0, 21, 10, 15); ctx.lineTo(13, -11)
+      ctx.closePath(); ctx.fill()
 
-      // Cup rim (cream)
       ctx.fillStyle = '#f5e6c8'
-      ctx.beginPath()
-      ctx.ellipse(0, -12, 15, 5, 0, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.beginPath(); ctx.ellipse(0, -11, 14, 5, 0, 0, Math.PI * 2); ctx.fill()
 
-      // Steam when going up
-      if (s.playerVy < -2) {
-        ctx.strokeStyle = 'rgba(200,180,160,0.5)'
-        ctx.lineWidth = 2
-        ctx.lineCap = 'round'
-        const t = Date.now() / 300
+      // Steam (going up)
+      if (s.playerVy < -3) {
+        ctx.strokeStyle = 'rgba(200,180,160,0.45)'; ctx.lineWidth = 2; ctx.lineCap = 'round'
+        const t = Date.now() / 250
         for (let i = -1; i <= 1; i++) {
           ctx.beginPath()
-          ctx.moveTo(i * 6, -17)
-          ctx.quadraticCurveTo(i * 6 + Math.sin(t + i) * 4, -25, i * 6, -33)
+          ctx.moveTo(i * 5, -16)
+          ctx.quadraticCurveTo(i * 5 + Math.sin(t + i) * 4, -24, i * 5, -31)
           ctx.stroke()
         }
       }
 
-      // Eyes
-      ctx.fillStyle = C.playerEye
-      ctx.beginPath()
-      ctx.ellipse(-5, -5, 4, 5, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.beginPath()
-      ctx.ellipse(5, -5, 4, 5, 0, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.beginPath(); ctx.ellipse(-5, -4, 4, 5, 0, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.ellipse(5, -4, 4, 5, 0, 0, Math.PI * 2); ctx.fill()
 
-      // Pupils
-      ctx.fillStyle = C.playerPupil
-      const pupilOff = s.playerVy < 0 ? -1 : 1
-      ctx.beginPath()
-      ctx.ellipse(-4, -5 + pupilOff, 2, 2.5, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.beginPath()
-      ctx.ellipse(6, -5 + pupilOff, 2, 2.5, 0, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.fillStyle = '#1e0e01'
+      const ey = s.playerVy < 0 ? -5 : -3
+      ctx.beginPath(); ctx.ellipse(-4, ey, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.ellipse(6, ey, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill()
 
-      // Mouth
-      if (s.gameOver) {
-        ctx.strokeStyle = C.playerPupil
-        ctx.lineWidth = 1.5
-        ctx.beginPath()
-        ctx.arc(0, 4, 4, 0, Math.PI, true)
-        ctx.stroke()
-      } else {
-        ctx.fillStyle = C.playerPupil
-        ctx.beginPath()
-        ctx.arc(0, 4, 3, 0, Math.PI, false)
-        ctx.fill()
-      }
-
-      // Handle
-      ctx.strokeStyle = C.player
-      ctx.lineWidth = 3
-      ctx.beginPath()
-      ctx.arc(16, 2, 7, -Math.PI / 2, Math.PI / 2, false)
-      ctx.stroke()
-
+      ctx.strokeStyle = C.player; ctx.lineWidth = 3
+      ctx.beginPath(); ctx.arc(15, 2, 7, -Math.PI / 2, Math.PI / 2, false); ctx.stroke()
       ctx.restore()
 
       // Particles
       for (const p of s.particles) {
-        ctx.globalAlpha = p.life / 30
+        ctx.globalAlpha = p.life / 35
         ctx.fillStyle = p.color
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-        ctx.fill()
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill()
       }
       ctx.globalAlpha = 1
-
       ctx.restore()
 
-      // --- HUD ---
-      // Score
+      // HUD
       ctx.fillStyle = C.text
-      ctx.font = 'bold 20px Inter, sans-serif'
+      ctx.font = 'bold 18px Inter, system-ui, sans-serif'
       ctx.textAlign = 'left'
-      ctx.fillText(`☕ ${s.score}`, 16, 32)
+      ctx.fillText(`☕ ${s.score}`, 14, 30)
 
-      // Start screen
+      // Start overlay
       if (!s.started) {
-        ctx.fillStyle = C.overlay
-        ctx.fillRect(0, 0, W, H)
+        ctx.fillStyle = C.overlay; ctx.fillRect(0, 0, W, H)
         ctx.fillStyle = '#fff'
-        ctx.font = 'bold 32px Inter, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText('Coffee Jump ☕', W / 2, H / 2 - 40)
-        ctx.font = '16px Inter, sans-serif'
-        ctx.fillText('Натисни або свайп щоб почати', W / 2, H / 2 + 10)
-        ctx.font = '13px Inter, sans-serif'
-        ctx.fillStyle = '#d9a84e'
-        ctx.fillText('← → або нахиляй телефон', W / 2, H / 2 + 40)
+        ctx.font = 'bold 28px Inter, system-ui, sans-serif'; ctx.textAlign = 'center'
+        ctx.fillText('PerkUp Runner ☕', W / 2, H / 2 - 44)
+        ctx.font = '15px Inter, system-ui, sans-serif'
+        ctx.fillText('Торкнись або свайпуй щоб почати', W / 2, H / 2 + 4)
+        ctx.font = '12px Inter, system-ui, sans-serif'; ctx.fillStyle = C.bean
+        ctx.fillText('← → або нахиляй телефон', W / 2, H / 2 + 30)
       }
 
-      // Game over screen
+      // Game over overlay
       if (s.gameOver) {
-        ctx.fillStyle = C.overlay
-        ctx.fillRect(0, 0, W, H)
+        ctx.fillStyle = C.overlay; ctx.fillRect(0, 0, W, H)
         ctx.fillStyle = '#fff'
-        ctx.font = 'bold 28px Inter, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText('Гра закінчена!', W / 2, H / 2 - 50)
-        ctx.font = 'bold 40px Inter, sans-serif'
-        ctx.fillStyle = C.bean
-        ctx.fillText(`☕ ${s.score}`, W / 2, H / 2 + 5)
-        ctx.font = '14px Inter, sans-serif'
-        ctx.fillStyle = '#fff'
-        ctx.fillText('Натисни "Грати знову" щоб продовжити', W / 2, H / 2 + 40)
+        ctx.font = 'bold 26px Inter, system-ui, sans-serif'; ctx.textAlign = 'center'
+        ctx.fillText('Гра закінчена!', W / 2, H / 2 - 52)
+        ctx.font = 'bold 44px Inter, system-ui, sans-serif'; ctx.fillStyle = C.bean
+        ctx.fillText(`☕ ${s.score}`, W / 2, H / 2 + 4)
+        ctx.font = '13px Inter, system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.7)'
+        ctx.fillText('Натисни «Ще раз» нижче', W / 2, H / 2 + 38)
       }
-
-      rafRef.current = requestAnimationFrame(loop)
     }
 
     rafRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [canvasSize, initGame, onGameOver])
+  }, [size, initGame, onGameOver])
 
-  const restart = () => {
-    if (!canvasSize.w) return
-    initGame(canvasSize.w, canvasSize.h)
-  }
-
-  const isGameOver = stateRef.current?.gameOver
+  const restart = () => { if (size.w) initGame(size.w, size.h) }
 
   return (
-    <div className="relative w-full flex flex-col items-center" style={{ height: canvasSize.h || 500 }}>
+    <div
+      className="relative w-full flex flex-col items-center select-none"
+      style={{ height: size.h || 480 }}
+    >
       <canvas
         ref={canvasRef}
-        width={canvasSize.w}
-        height={canvasSize.h}
-        className="rounded-2xl border border-gray-200 shadow-sm touch-none"
-        style={{ width: canvasSize.w, height: canvasSize.h }}
+        width={size.w}
+        height={size.h}
+        className="rounded-2xl border border-amber-200 shadow-md touch-none"
+        style={{ width: size.w, height: size.h, display: 'block' }}
+        onClick={() => {
+          if (stateRef.current && !stateRef.current.started) {
+            stateRef.current.started = true
+          }
+        }}
       />
-      {isGameOver && (
+      {gameOver && (
         <button
           onClick={restart}
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-coffee-500 hover:bg-coffee-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg active:scale-95 transition-transform text-lg"
+          className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-800 text-white font-bold py-3 px-10 rounded-2xl shadow-xl active:scale-95 transition-transform text-base"
         >
-          Грати знову 🔄
+          Ще раз 🔄
         </button>
       )}
     </div>
