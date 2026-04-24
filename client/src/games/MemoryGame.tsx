@@ -52,7 +52,7 @@ export default function MemoryGame({ onFinish }: Props) {
     clearInterval(timerRef.current)
     setLoading(true)
     try {
-      const res = await gameApi.finishGame('MEMORY', secs)
+      const res = await gameApi.finish('MEMORY', secs)
       const earned = res.data?.pointsWon || res.data?.earnedPoints || 0
       setPts(earned); onFinish(earned)
     } catch { onFinish(0) }

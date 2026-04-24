@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { adminApi } from '../lib/api'
+import { adminApi, shiftsApi } from '../lib/api'
 import { useAuthStore } from '../stores/auth'
 import { useNavigate } from 'react-router-dom'
+import { FEATURES } from '../lib/features'
 
 export default function BaristaPage() {
   const { user } = useAuthStore()
@@ -14,6 +15,9 @@ export default function BaristaPage() {
   const [searching, setSearching] = useState(false)
   const [awarding, setAwarding] = useState(false)
   const [toast, setToast]       = useState<{text:string; ok:boolean}|null>(null)
+  const [shiftStats, setShiftStats] = useState<any>(null)
+  const [shiftHistory, setShiftHistory] = useState<any[]>([])
+  const [shiftLoading, setShiftLoading] = useState(false)
 
   // Доступ лише для баристи/адмін/овнер
   useEffect(() => {
@@ -22,6 +26,27 @@ export default function BaristaPage() {
     }
     phoneRef.current?.focus()
   }, [user, navigate])
+
+  useEffect(() => {
+    if (!FEATURES.SHIFT_HISTORY_ANALYTICS) return
+    const load = async () => {
+      setShiftLoading(true)
+      try {
+        const [analyticsRes, historyRes] = await Promise.all([
+          shiftsApi.getAnalytics({ days: 30 }),
+          shiftsApi.getHistory({ page: 1 }),
+        ])
+        setShiftStats(analyticsRes.data.analytics)
+        setShiftHistory(historyRes.data.shifts || [])
+      } catch {
+        setShiftStats(null)
+        setShiftHistory([])
+      } finally {
+        setShiftLoading(false)
+      }
+    }
+    load()
+  }, [])
 
   const showToast = (text: string, ok: boolean) => {
     setToast({ text, ok })
@@ -169,6 +194,58 @@ export default function BaristaPage() {
             </div>
           )
         })()}
+
+        {FEATURES.SHIFT_HISTORY_ANALYTICS && (
+          <div className="bg-stone-800 rounded-2xl p-4 space-y-3 border border-stone-700">
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-bold">📈 Зміни: аналітика (30 днів)</h2>
+              {shiftLoading && <span className="text-xs text-stone-400">Завантаження...</span>}
+            </div>
+
+            {shiftStats ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-stone-700 rounded-xl p-2.5">
+                  <div className="text-stone-400 text-xs">Змін</div>
+                  <div className="text-white font-bold text-lg">{shiftStats.shiftsCount}</div>
+                </div>
+                <div className="bg-stone-700 rounded-xl p-2.5">
+                  <div className="text-stone-400 text-xs">Замовлень</div>
+                  <div className="text-white font-bold text-lg">{shiftStats.completedOrders}</div>
+                </div>
+                <div className="bg-stone-700 rounded-xl p-2.5">
+                  <div className="text-stone-400 text-xs">Виручка</div>
+                  <div className="text-white font-bold text-lg">{Math.round(shiftStats.revenue)} ₴</div>
+                </div>
+                <div className="bg-stone-700 rounded-xl p-2.5">
+                  <div className="text-stone-400 text-xs">Чайові</div>
+                  <div className="text-white font-bold text-lg">{Math.round(shiftStats.tipsTotal)} ₴</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-stone-500">Немає даних по аналітиці.</div>
+            )}
+
+            <div className="pt-1">
+              <p className="text-stone-400 text-xs mb-2">Останні зміни</p>
+              <div className="space-y-2 max-h-44 overflow-auto no-scrollbar">
+                {shiftHistory.length === 0 && (
+                  <div className="text-xs text-stone-500">Історія змін порожня.</div>
+                )}
+                {shiftHistory.slice(0, 5).map((shift) => (
+                  <div key={shift.id} className="bg-stone-700 rounded-xl p-2.5">
+                    <div className="text-white text-sm font-semibold">#{shift.id} • {shift.location?.name || 'Локація'}</div>
+                    <div className="text-xs text-stone-400 mt-1">
+                      {new Date(shift.startedAt).toLocaleString('uk-UA')} → {shift.endedAt ? new Date(shift.endedAt).toLocaleString('uk-UA') : 'активна'}
+                    </div>
+                    <div className="text-xs text-amber-400 mt-1">
+                      Замовлень: {shift.ordersCount} • Чайові: {Math.round(Number(shift.totalTips || 0))} ₴
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Підказки */}
         {!foundUser && (

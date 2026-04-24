@@ -85,6 +85,88 @@ export default async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  app.get('/reviews', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      rating: z.coerce.number().int().min(1).max(5).optional(),
+      locationId: z.coerce.number().int().positive().optional(),
+    }).safeParse(req.query)
+
+    const page = query.success ? query.data.page : 1
+    const take = 20
+    const skip = (page - 1) * take
+    const where: any = {}
+    if (query.success && query.data.rating) where.rating = query.data.rating
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const [reviews, total] = await Promise.all([
+      prisma.review.findMany({
+        where,
+        include: {
+          user: { select: { id: true, firstName: true, username: true } },
+          location: { select: { id: true, name: true, slug: true } },
+          order: { select: { id: true, total: true, status: true, createdAt: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.review.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      reviews,
+      total,
+      pages: Math.ceil(total / take),
+    })
+  })
+
+  app.get('/analytics/basic', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      days: z.coerce.number().int().min(1).max(90).default(30),
+    }).safeParse(req.query)
+    const days = query.success ? query.data.days : 30
+    const since = new Date(Date.now() - days * 86400000)
+
+    const whereCompleted = {
+      status: 'COMPLETED' as const,
+      createdAt: { gte: since },
+    }
+    const whereReviews = { createdAt: { gte: since } }
+
+    const [ordersCount, revenue, reviewsCount, ratingAgg, ratingGrouped] = await Promise.all([
+      prisma.order.count({ where: whereCompleted }),
+      prisma.order.aggregate({ where: whereCompleted, _sum: { total: true } }),
+      prisma.review.count({ where: whereReviews }),
+      prisma.review.aggregate({ where: whereReviews, _avg: { rating: true } }),
+      prisma.review.groupBy({
+        by: ['rating'],
+        _count: { rating: true },
+        where: whereReviews,
+      }),
+    ])
+
+    const revenueValue = Number(revenue._sum.total || 0)
+    const ratingDistribution = [5, 4, 3, 2, 1].map((rating) => {
+      const found = ratingGrouped.find((item) => item.rating === rating)
+      return { rating, count: found?._count.rating || 0 }
+    })
+
+    return reply.send({
+      success: true,
+      analytics: {
+        periodDays: days,
+        ordersCompleted: ordersCount,
+        revenue: revenueValue,
+        avgOrderValue: ordersCount > 0 ? revenueValue / ordersCount : 0,
+        reviewsCount,
+        avgRating: Number(ratingAgg._avg.rating || 0),
+        ratingDistribution,
+      },
+    })
+  })
+
   app.get('/users', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const query = z.object({
       page: z.coerce.number().int().min(1).default(1),
@@ -153,6 +235,35 @@ export default async function adminRoutes(app: FastifyInstance) {
     })
 
     return reply.send({ success: true, user })
+  })
+
+  app.post('/users/:id/reset-no-show', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) {
+      return reply.status(400).send({ success: false, error: 'Invalid user id' })
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        noShowCount: 0,
+        cashPaymentBlocked: false,
+      },
+      select: {
+        id: true,
+        noShowCount: true,
+        cashPaymentBlocked: true,
+      },
+    }).catch(() => null)
+
+    if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+
+    return reply.send({
+      success: true,
+      userId: user.id,
+      noShowCount: user.noShowCount,
+      cashPaymentBlocked: user.cashPaymentBlocked,
+    })
   })
 
   app.get('/orders', { preHandler: adminOnly }, async (req: any, reply: any) => {
@@ -466,6 +577,11 @@ export default async function adminRoutes(app: FastifyInstance) {
       volume: z.string().max(50).optional(),
       calories: z.coerce.number().int().min(0).max(5000).optional(),
       isAvailable: z.boolean().optional(),
+      isHiddenInApp: z.boolean().optional(),
+      isNew: z.boolean().optional(),
+      isTop: z.boolean().optional(),
+      isSeasonal: z.boolean().optional(),
+      isRecommended: z.boolean().optional(),
     }).safeParse(req.body)
     if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
 
@@ -504,6 +620,11 @@ export default async function adminRoutes(app: FastifyInstance) {
           volume: body.data.volume?.trim() || null,
           calories: body.data.calories,
           isAvailable: body.data.isAvailable ?? true,
+          isHiddenInApp: body.data.isHiddenInApp ?? false,
+          isNew: body.data.isNew ?? false,
+          isTop: body.data.isTop ?? false,
+          isSeasonal: body.data.isSeasonal ?? false,
+          isRecommended: body.data.isRecommended ?? false,
           allergens: [],
           tags: [],
         },
@@ -545,6 +666,11 @@ export default async function adminRoutes(app: FastifyInstance) {
       imageUrl: z.string().url().max(1000).optional().nullable(),
       volume: z.string().max(50).optional().nullable(),
       calories: z.coerce.number().int().min(0).max(5000).optional().nullable(),
+      isHiddenInApp: z.boolean().optional(),
+      isNew: z.boolean().optional(),
+      isTop: z.boolean().optional(),
+      isSeasonal: z.boolean().optional(),
+      isRecommended: z.boolean().optional(),
     }).safeParse(req.body)
     if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
 
@@ -558,6 +684,11 @@ export default async function adminRoutes(app: FastifyInstance) {
     const data: any = {}
 
     if (body.data.isAvailable !== undefined) data.isAvailable = body.data.isAvailable
+    if (body.data.isHiddenInApp !== undefined) data.isHiddenInApp = body.data.isHiddenInApp
+    if (body.data.isNew !== undefined) data.isNew = body.data.isNew
+    if (body.data.isTop !== undefined) data.isTop = body.data.isTop
+    if (body.data.isSeasonal !== undefined) data.isSeasonal = body.data.isSeasonal
+    if (body.data.isRecommended !== undefined) data.isRecommended = body.data.isRecommended
 
     if (profile.menuManagement === 'LOCAL') {
       if (body.data.price !== undefined) data.price = body.data.price
@@ -567,8 +698,20 @@ export default async function adminRoutes(app: FastifyInstance) {
       if (body.data.imageUrl !== undefined) data.imageUrl = body.data.imageUrl?.trim() || null
       if (body.data.volume !== undefined) data.volume = body.data.volume?.trim() || null
       if (body.data.calories !== undefined) data.calories = body.data.calories
-    } else if (Object.keys(body.data).some((key) => key !== 'isAvailable')) {
-      return reply.status(400).send({ success: false, error: 'Poster menu supports availability only. Edit products in Poster for full changes.' })
+    } else {
+      if (body.data.description !== undefined) data.description = body.data.description?.trim() || null
+      if (body.data.ingredients !== undefined) data.ingredients = body.data.ingredients?.trim() || null
+      if (body.data.imageUrl !== undefined) data.imageUrl = body.data.imageUrl?.trim() || null
+      if (body.data.volume !== undefined) data.volume = body.data.volume?.trim() || null
+      if (body.data.calories !== undefined) data.calories = body.data.calories
+
+      const forbiddenPosterFields = ['price', 'name', 'category']
+      if (forbiddenPosterFields.some((key) => (body.data as any)[key] !== undefined)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Poster menu supports editing only marketing fields (description, image, badges, visibility, availability).',
+        })
+      }
     }
 
     if (profile.menuManagement === 'LOCAL' && body.data.category && body.data.category !== product.category) {

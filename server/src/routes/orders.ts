@@ -11,6 +11,44 @@ import { createPosterIncomingOrder } from '../services/poster'
 
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID || ''
 const BOT = process.env.BOT_TOKEN || ''
+const NO_SHOW_BLOCK_THRESHOLD = 3
+const TIPS_FEATURE_ENABLED = process.env.FEATURE_TIPS !== 'false'
+const PROMOS_FEATURE_ENABLED = process.env.FEATURE_PROMOS !== 'false'
+
+async function resolvePromoDiscount(params: {
+  code: string
+  locationId: number
+  subtotal: number
+}) {
+  const normalizedCode = params.code.trim().toUpperCase()
+  const now = new Date()
+  const promo = await prisma.promo.findUnique({ where: { code: normalizedCode } })
+  if (!promo || !promo.isActive) return { ok: false as const, error: 'Promo not found' }
+  if (promo.expiresAt && promo.expiresAt < now) return { ok: false as const, error: 'Promo expired' }
+  if (promo.locationId && promo.locationId !== params.locationId) return { ok: false as const, error: 'Promo is not valid for this location' }
+  if (promo.maxUses !== null && promo.usedCount >= promo.maxUses) return { ok: false as const, error: 'Promo usage limit reached' }
+  if (promo.minOrderSum && params.subtotal < Number(promo.minOrderSum)) {
+    return { ok: false as const, error: `Minimum order sum is ${Number(promo.minOrderSum)} UAH` }
+  }
+  if (promo.type !== 'PERCENT' && promo.type !== 'FIXED') {
+    return { ok: false as const, error: 'Unsupported promo type for preorder' }
+  }
+
+  const rawDiscount = promo.type === 'PERCENT'
+    ? Math.round((params.subtotal * Number(promo.value)) / 100)
+    : Number(promo.value)
+  const discount = Math.max(0, Math.min(params.subtotal, rawDiscount))
+
+  return {
+    ok: true as const,
+    promoId: promo.id,
+    code: promo.code,
+    type: promo.type,
+    value: Number(promo.value),
+    maxUses: promo.maxUses,
+    discount,
+  }
+}
 
 async function tgSend(chatId: string, text: string) {
   if (!BOT || !chatId) return
@@ -52,6 +90,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       })).min(1),
       customerPhone: z.string().min(10).max(20).optional(),
       comment: z.string().max(300).optional(),
+      promoCode: z.string().min(2).max(40).optional(),
       pointsUsed: z.number().min(0).default(0),
       pointsToRedeem: z.number().min(0).optional(),
     })
@@ -61,7 +100,7 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     const rawData = result.data
     const pointsUsed = rawData.pointsToRedeem ?? rawData.pointsUsed
-    const { locationId, items, customerPhone, comment } = rawData
+    const { locationId, items, customerPhone, comment, promoCode } = rawData
 
     const location = await prisma.location.findUnique({
       where: { id: locationId, isActive: true },
@@ -88,6 +127,15 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     const user: any = await prisma.user.findUnique({ where: { id: req.user.id } })
     if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+
+    const isPrivileged = ['ADMIN', 'OWNER'].includes(req.user.role)
+    if (!isPrivileged && user.cashPaymentBlocked && location.hasPoster && locationProfile.paymentFlow === 'CASHIER_ONLY') {
+      return reply.status(403).send({
+        success: false,
+        error: 'CASH_PAYMENT_BLOCKED',
+        message: 'Передзамовлення з оплатою на касі тимчасово обмежено. Зверніться до бариста або адміністратора.',
+      })
+    }
 
     let normalizedPhone: string | null = null
     if (location.hasPoster) {
@@ -140,31 +188,83 @@ export default async function orderRoutes(app: FastifyInstance) {
       }
     }
 
-    let discount = 0
+    let promoDiscount = 0
+    let normalizedPromoCode: string | null = null
+    let promoId: number | null = null
+    let promoMaxUses: number | null = null
+    if (promoCode?.trim()) {
+      if (!PROMOS_FEATURE_ENABLED) {
+        return reply.status(400).send({ success: false, error: 'Promo codes are disabled' })
+      }
+      if (location.hasPoster) {
+        return reply.status(400).send({ success: false, error: 'Promo codes are not available for Poster preorders yet' })
+      }
+      const promoResult = await resolvePromoDiscount({
+        code: promoCode,
+        locationId,
+        subtotal: total,
+      })
+      if (!promoResult.ok) {
+        return reply.status(400).send({ success: false, error: promoResult.error })
+      }
+      promoDiscount = promoResult.discount
+      normalizedPromoCode = promoResult.code
+      promoId = promoResult.promoId
+      promoMaxUses = promoResult.maxUses
+    }
+
+    let pointsDiscount = 0
     if (pointsUsed > 0) {
+      if (normalizedPromoCode) {
+        return reply.status(400).send({ success: false, error: 'Promo cannot be combined with bonus redemption' })
+      }
       if (location.hasPoster) {
         return reply.status(400).send({ success: false, error: 'Bonus redemption is not available for Poster preorders yet. Bonuses will be credited after payment at the cashier.' })
       }
       if (user.points < pointsUsed) return reply.status(400).send({ success: false, error: 'Not enough points' })
       const maxDiscount = Math.floor(total * 0.2)
-      discount = Math.min(pointsUsed, maxDiscount)
+      pointsDiscount = Math.min(pointsUsed, maxDiscount)
     }
 
+    const discount = promoDiscount + pointsDiscount
     const finalTotal = Math.max(0, total - discount)
     const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
 
+    let orderFailure: 'INSUFFICIENT_POINTS' | 'PROMO_USAGE_LIMIT_REACHED' | null = null
     const order = await prisma.$transaction(async (tx) => {
-      if (discount > 0) {
+      if (pointsDiscount > 0) {
         // Atomic conditional decrement: only succeeds if user still has enough points.
         // Prevents race when two concurrent orders try to spend the same balance.
         const res = await tx.user.updateMany({
-          where: { id: user.id, points: { gte: discount } },
-          data: { points: { decrement: discount } },
+          where: { id: user.id, points: { gte: pointsDiscount } },
+          data: { points: { decrement: pointsDiscount } },
         })
         if (res.count === 0) {
           throw new Error('INSUFFICIENT_POINTS')
         }
       }
+      if (normalizedPromoCode && promoId) {
+        const reserveCount = promoMaxUses === null
+          ? await tx.promo.updateMany({
+              where: { id: promoId, code: normalizedPromoCode, isActive: true },
+              data: { usedCount: { increment: 1 } },
+            })
+          : await tx.promo.updateMany({
+              where: {
+                id: promoId,
+                code: normalizedPromoCode,
+                isActive: true,
+                maxUses: promoMaxUses,
+                usedCount: { lt: promoMaxUses },
+              },
+              data: { usedCount: { increment: 1 } },
+            })
+
+        if (reserveCount.count === 0) {
+          throw new Error('PROMO_USAGE_LIMIT_REACHED')
+        }
+      }
+
       const created = await tx.order.create({
         data: {
           userId: user.id,
@@ -173,6 +273,7 @@ export default async function orderRoutes(app: FastifyInstance) {
           status: activeShift ? 'PENDING' : 'UNASSIGNED',
           total: new Prisma.Decimal(finalTotal),
           discount: new Prisma.Decimal(discount),
+          promoCode: normalizedPromoCode,
           paymentMethod: 'cashier',
           comment: comment || null,
           pointsUsed,
@@ -181,20 +282,30 @@ export default async function orderRoutes(app: FastifyInstance) {
         },
         include: { items: true },
       })
-      if (discount > 0) {
+      if (pointsDiscount > 0) {
         await tx.pointsTransaction.create({ data: {
-          userId: user.id, amount: -discount, type: 'REDEEM',
+          userId: user.id, amount: -pointsDiscount, type: 'REDEEM',
           description: 'Points for order #' + created.id,
           idempotencyKey: 'redeem-order-' + created.id,
         }})
       }
       return created
     }).catch((err: Error) => {
-      if (err.message === 'INSUFFICIENT_POINTS') return null
+      if (err.message === 'INSUFFICIENT_POINTS') {
+        orderFailure = 'INSUFFICIENT_POINTS'
+        return null
+      }
+      if (err.message === 'PROMO_USAGE_LIMIT_REACHED') {
+        orderFailure = 'PROMO_USAGE_LIMIT_REACHED'
+        return null
+      }
       throw err
     })
 
     if (!order) {
+      if (orderFailure === 'PROMO_USAGE_LIMIT_REACHED') {
+        return reply.status(409).send({ success: false, error: 'PROMO_USAGE_LIMIT_REACHED', message: 'Promo usage limit reached' })
+      }
       return reply.status(400).send({ success: false, error: 'Not enough points' })
     }
 
@@ -234,8 +345,8 @@ export default async function orderRoutes(app: FastifyInstance) {
           data: { posterOrderId, status: finalStatus },
         })
       } catch (error) {
-        if (discount > 0) {
-          await prisma.user.update({ where: { id: user.id }, data: { points: { increment: discount } } })
+        if (pointsDiscount > 0) {
+          await prisma.user.update({ where: { id: user.id }, data: { points: { increment: pointsDiscount } } })
           await prisma.pointsTransaction.deleteMany({ where: { idempotencyKey: 'redeem-order-' + order.id } })
         }
         await prisma.orderItem.deleteMany({ where: { orderId: order.id } })
@@ -251,6 +362,7 @@ export default async function orderRoutes(app: FastifyInstance) {
     const msg = [
       'New order #' + order.id, location.name, itemLines,
       discount > 0 ? 'Discount: -' + discount + ' uah' : '',
+      normalizedPromoCode ? 'Promo: ' + normalizedPromoCode : '',
       'Total: ' + finalTotal + ' uah',
       'Payment: at cashier / POS',
       posterOrderId ? 'Poster incoming order: ' + posterOrderId : '',
@@ -296,14 +408,117 @@ export default async function orderRoutes(app: FastifyInstance) {
     return reply.send({ success: true, orders })
   })
 
+  app.post('/promo/validate', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!PROMOS_FEATURE_ENABLED) {
+      return reply.status(404).send({ success: false, error: 'Promo codes are disabled' })
+    }
+    const parsed = z.object({
+      code: z.string().min(2).max(40),
+      locationId: z.number().int().positive(),
+      subtotal: z.number().min(0),
+    }).safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid request' })
+
+    const result = await resolvePromoDiscount(parsed.data)
+    if (!result.ok) {
+      return reply.status(400).send({ success: false, error: result.error })
+    }
+
+    return reply.send({
+      success: true,
+      promo: {
+        code: result.code,
+        type: result.type,
+        value: result.value,
+        discount: result.discount,
+      },
+      finalTotal: Math.max(0, parsed.data.subtotal - result.discount),
+    })
+  })
+
   app.get('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const id = Number(req.params.id)
     const order = await prisma.order.findFirst({
       where: { id, userId: req.user.id },
-      include: { items: true, location: { select: { name: true, slug: true, googlePlaceId: true } } },
+      include: {
+        items: true,
+        tip: { select: { amount: true, createdAt: true } },
+        location: { select: { id: true, name: true, slug: true, googlePlaceId: true } },
+      },
     })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
     return reply.send({ success: true, order })
+  })
+
+  app.post('/:id/tip', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!TIPS_FEATURE_ENABLED) {
+      return reply.status(404).send({ success: false, error: 'Tips are disabled' })
+    }
+
+    const id = Number(req.params.id)
+    const parsed = z.object({ amount: z.number().min(1).max(1000) }).safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid tip amount' })
+
+    const order = await prisma.order.findFirst({
+      where: { id, userId: req.user.id },
+      include: { tip: true, location: { select: { id: true, name: true } } },
+    })
+
+    if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
+    if (order.status !== 'COMPLETED') {
+      return reply.status(400).send({ success: false, error: 'Tip is available only for completed orders' })
+    }
+    if (order.tip) {
+      return reply.status(409).send({ success: false, error: 'Tip already added for this order' })
+    }
+
+    let shiftId = order.shiftId
+    if (!shiftId) {
+      const activeShift = await prisma.shift.findFirst({
+        where: { locationId: order.locationId, endedAt: null },
+        orderBy: { startedAt: 'desc' },
+      })
+      shiftId = activeShift?.id ?? null
+    }
+    if (!shiftId) {
+      return reply.status(400).send({ success: false, error: 'No active shift for tips at this location' })
+    }
+
+    let tip: any
+    try {
+      tip = await prisma.$transaction(async (tx) => {
+        const createdTip = await tx.tip.create({
+          data: {
+            orderId: order.id,
+            userId: order.userId,
+            shiftId,
+            amount: new Prisma.Decimal(parsed.data.amount),
+          },
+        })
+
+        await tx.shift.update({
+          where: { id: shiftId! },
+          data: { totalTips: { increment: new Prisma.Decimal(parsed.data.amount) } },
+        })
+
+        return createdTip
+      })
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return reply.status(409).send({ success: false, error: 'Tip already added for this order' })
+      }
+      throw error
+    }
+
+    return reply.send({
+      success: true,
+      tip: {
+        id: tip.id,
+        orderId: tip.orderId,
+        amount: Number(tip.amount),
+        createdAt: tip.createdAt,
+      },
+    })
   })
 
   app.delete('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
@@ -334,7 +549,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       )
     }
 
-    if (order.discount && Number(order.discount) > 0) {
+    if (order.pointsUsed > 0 && order.discount && Number(order.discount) > 0) {
       const refundKey = 'cancel-refund-order-' + id
       const exists = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: refundKey } })
       if (!exists) {
@@ -350,6 +565,13 @@ export default async function orderRoutes(app: FastifyInstance) {
           data: { points: { increment: Number(order.discount) } },
         })
       }
+    }
+
+    if (order.promoCode) {
+      await prisma.promo.updateMany({
+        where: { code: order.promoCode, usedCount: { gt: 0 } },
+        data: { usedCount: { decrement: 1 } },
+      })
     }
     return reply.send({ success: true })
   })
@@ -449,5 +671,107 @@ export default async function orderRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ success: true, status: parsed.data.status })
+  })
+
+  app.post('/:id/no-show', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
+      return reply.status(403).send({ success: false, error: 'Forbidden' })
+    }
+
+    const id = Number(req.params.id)
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { user: true, location: { select: { id: true, name: true, slug: true, hasPoster: true } } },
+    })
+    if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
+    if (order.status === 'COMPLETED') {
+      return reply.status(400).send({ success: false, error: 'Cannot mark completed order as no-show' })
+    }
+    if (!order.location.hasPoster) {
+      return reply.status(400).send({ success: false, error: 'No-show flow is enabled only for Poster preorder locations' })
+    }
+
+    const markerKey = `no-show-order-${id}`
+    const existing = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: markerKey } })
+    if (existing) {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: order.userId },
+        select: { id: true, noShowCount: true, cashPaymentBlocked: true },
+      })
+      return reply.send({
+        success: true,
+        alreadyMarked: true,
+        orderId: id,
+        threshold: NO_SHOW_BLOCK_THRESHOLD,
+        noShowCount: currentUser?.noShowCount ?? order.user.noShowCount,
+        cashPaymentBlocked: currentUser?.cashPaymentBlocked ?? order.user.cashPaymentBlocked,
+      })
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx: any) => {
+        await tx.pointsTransaction.create({
+          data: {
+            userId: order.userId,
+            amount: 0,
+            type: 'ADMIN',
+            description: `No-show mark for order #${id}`,
+            idempotencyKey: markerKey,
+          },
+        })
+
+        if (order.status !== 'CANCELLED') {
+          await tx.order.update({ where: { id }, data: { status: 'CANCELLED' } })
+        }
+
+        const updatedUser = await tx.user.update({
+          where: { id: order.userId },
+          data: { noShowCount: { increment: 1 } },
+          select: { id: true, noShowCount: true, cashPaymentBlocked: true, telegramId: true },
+        })
+
+        const shouldBlock = updatedUser.noShowCount >= NO_SHOW_BLOCK_THRESHOLD
+        if (shouldBlock && !updatedUser.cashPaymentBlocked) {
+          await tx.user.update({
+            where: { id: order.userId },
+            data: { cashPaymentBlocked: true },
+          })
+          updatedUser.cashPaymentBlocked = true
+        }
+
+        return updatedUser
+      })
+
+      if (result.telegramId) {
+        const msg = result.cashPaymentBlocked
+          ? `⚠️ Замовлення #${id} позначено як no-show. Передзамовлення з оплатою на касі тимчасово обмежено.`
+          : `⚠️ Замовлення #${id} позначено як no-show.`
+        await tgSend(String(result.telegramId), msg)
+      }
+
+      return reply.send({
+        success: true,
+        orderId: id,
+        threshold: NO_SHOW_BLOCK_THRESHOLD,
+        noShowCount: result.noShowCount,
+        cashPaymentBlocked: result.cashPaymentBlocked,
+      })
+    } catch (error: any) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const currentUser = await prisma.user.findUnique({
+          where: { id: order.userId },
+          select: { noShowCount: true, cashPaymentBlocked: true },
+        })
+        return reply.send({
+          success: true,
+          alreadyMarked: true,
+          orderId: id,
+          threshold: NO_SHOW_BLOCK_THRESHOLD,
+          noShowCount: currentUser?.noShowCount ?? order.user.noShowCount,
+          cashPaymentBlocked: currentUser?.cashPaymentBlocked ?? order.user.cashPaymentBlocked,
+        })
+      }
+      throw error
+    }
   })
 }
