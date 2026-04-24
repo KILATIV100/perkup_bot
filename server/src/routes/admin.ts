@@ -85,6 +85,88 @@ export default async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  app.get('/reviews', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      rating: z.coerce.number().int().min(1).max(5).optional(),
+      locationId: z.coerce.number().int().positive().optional(),
+    }).safeParse(req.query)
+
+    const page = query.success ? query.data.page : 1
+    const take = 20
+    const skip = (page - 1) * take
+    const where: any = {}
+    if (query.success && query.data.rating) where.rating = query.data.rating
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const [reviews, total] = await Promise.all([
+      prisma.review.findMany({
+        where,
+        include: {
+          user: { select: { id: true, firstName: true, username: true } },
+          location: { select: { id: true, name: true, slug: true } },
+          order: { select: { id: true, total: true, status: true, createdAt: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.review.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      reviews,
+      total,
+      pages: Math.ceil(total / take),
+    })
+  })
+
+  app.get('/analytics/basic', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      days: z.coerce.number().int().min(1).max(90).default(30),
+    }).safeParse(req.query)
+    const days = query.success ? query.data.days : 30
+    const since = new Date(Date.now() - days * 86400000)
+
+    const whereCompleted = {
+      status: 'COMPLETED' as const,
+      createdAt: { gte: since },
+    }
+    const whereReviews = { createdAt: { gte: since } }
+
+    const [ordersCount, revenue, reviewsCount, ratingAgg, ratingGrouped] = await Promise.all([
+      prisma.order.count({ where: whereCompleted }),
+      prisma.order.aggregate({ where: whereCompleted, _sum: { total: true } }),
+      prisma.review.count({ where: whereReviews }),
+      prisma.review.aggregate({ where: whereReviews, _avg: { rating: true } }),
+      prisma.review.groupBy({
+        by: ['rating'],
+        _count: { rating: true },
+        where: whereReviews,
+      }),
+    ])
+
+    const revenueValue = Number(revenue._sum.total || 0)
+    const ratingDistribution = [5, 4, 3, 2, 1].map((rating) => {
+      const found = ratingGrouped.find((item) => item.rating === rating)
+      return { rating, count: found?._count.rating || 0 }
+    })
+
+    return reply.send({
+      success: true,
+      analytics: {
+        periodDays: days,
+        ordersCompleted: ordersCount,
+        revenue: revenueValue,
+        avgOrderValue: ordersCount > 0 ? revenueValue / ordersCount : 0,
+        reviewsCount,
+        avgRating: Number(ratingAgg._avg.rating || 0),
+        ratingDistribution,
+      },
+    })
+  })
+
   app.get('/users', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const query = z.object({
       page: z.coerce.number().int().min(1).default(1),
