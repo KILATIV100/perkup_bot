@@ -11,6 +11,7 @@ import { createPosterIncomingOrder } from '../services/poster'
 
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID || ''
 const BOT = process.env.BOT_TOKEN || ''
+const NO_SHOW_BLOCK_THRESHOLD = 3
 
 async function tgSend(chatId: string, text: string) {
   if (!BOT || !chatId) return
@@ -88,6 +89,15 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     const user: any = await prisma.user.findUnique({ where: { id: req.user.id } })
     if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+
+    const isPrivileged = ['ADMIN', 'OWNER'].includes(req.user.role)
+    if (!isPrivileged && user.cashPaymentBlocked && location.hasPoster && locationProfile.paymentFlow === 'CASHIER_ONLY') {
+      return reply.status(403).send({
+        success: false,
+        error: 'CASH_PAYMENT_BLOCKED',
+        message: 'Передзамовлення з оплатою на касі тимчасово обмежено. Зверніться до бариста або адміністратора.',
+      })
+    }
 
     let normalizedPhone: string | null = null
     if (location.hasPoster) {
@@ -449,5 +459,107 @@ export default async function orderRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ success: true, status: parsed.data.status })
+  })
+
+  app.post('/:id/no-show', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!['BARISTA', 'ADMIN', 'OWNER'].includes(req.user.role)) {
+      return reply.status(403).send({ success: false, error: 'Forbidden' })
+    }
+
+    const id = Number(req.params.id)
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { user: true, location: { select: { id: true, name: true, slug: true, hasPoster: true } } },
+    })
+    if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
+    if (order.status === 'COMPLETED') {
+      return reply.status(400).send({ success: false, error: 'Cannot mark completed order as no-show' })
+    }
+    if (!order.location.hasPoster) {
+      return reply.status(400).send({ success: false, error: 'No-show flow is enabled only for Poster preorder locations' })
+    }
+
+    const markerKey = `no-show-order-${id}`
+    const existing = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: markerKey } })
+    if (existing) {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: order.userId },
+        select: { id: true, noShowCount: true, cashPaymentBlocked: true },
+      })
+      return reply.send({
+        success: true,
+        alreadyMarked: true,
+        orderId: id,
+        threshold: NO_SHOW_BLOCK_THRESHOLD,
+        noShowCount: currentUser?.noShowCount ?? order.user.noShowCount,
+        cashPaymentBlocked: currentUser?.cashPaymentBlocked ?? order.user.cashPaymentBlocked,
+      })
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx: any) => {
+        await tx.pointsTransaction.create({
+          data: {
+            userId: order.userId,
+            amount: 0,
+            type: 'ADMIN',
+            description: `No-show mark for order #${id}`,
+            idempotencyKey: markerKey,
+          },
+        })
+
+        if (order.status !== 'CANCELLED') {
+          await tx.order.update({ where: { id }, data: { status: 'CANCELLED' } })
+        }
+
+        const updatedUser = await tx.user.update({
+          where: { id: order.userId },
+          data: { noShowCount: { increment: 1 } },
+          select: { id: true, noShowCount: true, cashPaymentBlocked: true, telegramId: true },
+        })
+
+        const shouldBlock = updatedUser.noShowCount >= NO_SHOW_BLOCK_THRESHOLD
+        if (shouldBlock && !updatedUser.cashPaymentBlocked) {
+          await tx.user.update({
+            where: { id: order.userId },
+            data: { cashPaymentBlocked: true },
+          })
+          updatedUser.cashPaymentBlocked = true
+        }
+
+        return updatedUser
+      })
+
+      if (result.telegramId) {
+        const msg = result.cashPaymentBlocked
+          ? `⚠️ Замовлення #${id} позначено як no-show. Передзамовлення з оплатою на касі тимчасово обмежено.`
+          : `⚠️ Замовлення #${id} позначено як no-show.`
+        await tgSend(String(result.telegramId), msg)
+      }
+
+      return reply.send({
+        success: true,
+        orderId: id,
+        threshold: NO_SHOW_BLOCK_THRESHOLD,
+        noShowCount: result.noShowCount,
+        cashPaymentBlocked: result.cashPaymentBlocked,
+      })
+    } catch (error: any) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const currentUser = await prisma.user.findUnique({
+          where: { id: order.userId },
+          select: { noShowCount: true, cashPaymentBlocked: true },
+        })
+        return reply.send({
+          success: true,
+          alreadyMarked: true,
+          orderId: id,
+          threshold: NO_SHOW_BLOCK_THRESHOLD,
+          noShowCount: currentUser?.noShowCount ?? order.user.noShowCount,
+          cashPaymentBlocked: currentUser?.cashPaymentBlocked ?? order.user.cashPaymentBlocked,
+        })
+      }
+      throw error
+    }
   })
 }

@@ -126,7 +126,7 @@ export default function QuizGame({ onFinish }: Props) {
     setIsCorrect(correct)
     setSaving(true)
     try {
-      const res = await gameApi.finishGame('QUIZ', correct ? 1 : 0)
+      const res = await gameApi.finish('QUIZ', correct ? 1 : 0)
       setPts(res.data?.pointsWon || res.data?.earnedPoints || 0)
     } catch {}
     setSaving(false)

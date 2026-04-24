@@ -132,4 +132,86 @@ export default async function healthRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, timestamp: new Date().toISOString(), results })
   })
+
+  // Poster integration health by location
+  app.get('/poster', async (_req, reply) => {
+    const locations = await prisma.location.findMany({
+      where: { isActive: true, hasPoster: true },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        posterSubdomain: true,
+        posterToken: true,
+      },
+      orderBy: { id: 'asc' },
+    })
+
+    const checks = await Promise.all(locations.map(async (location) => {
+      if (!location.posterSubdomain) {
+        return {
+          slug: location.slug,
+          name: location.name,
+          status: 'error',
+          error: 'posterSubdomain_missing',
+        }
+      }
+      if (!location.posterToken) {
+        return {
+          slug: location.slug,
+          name: location.name,
+          status: 'error',
+          error: 'posterToken_missing',
+        }
+      }
+
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 7000)
+      try {
+        const url = `https://${location.posterSubdomain}.joinposter.com/api/menu.getProducts?token=${location.posterToken}`
+        const res = await fetch(url, { signal: controller.signal })
+        if (!res.ok) {
+          return {
+            slug: location.slug,
+            name: location.name,
+            status: 'error',
+            error: `http_${res.status}`,
+          }
+        }
+        const data: any = await res.json()
+        const products = Array.isArray(data?.response) ? data.response.length : null
+        if (!Array.isArray(data?.response)) {
+          return {
+            slug: location.slug,
+            name: location.name,
+            status: 'error',
+            error: 'bad_response',
+          }
+        }
+        return {
+          slug: location.slug,
+          name: location.name,
+          status: 'ok',
+          products,
+        }
+      } catch (error: any) {
+        return {
+          slug: location.slug,
+          name: location.name,
+          status: 'error',
+          error: error?.name === 'AbortError' ? 'timeout' : (error?.message || 'fetch_failed'),
+        }
+      } finally {
+        clearTimeout(timer)
+      }
+    }))
+
+    const hasError = checks.some((c) => c.status !== 'ok')
+    return reply.status(hasError ? 503 : 200).send({
+      status: hasError ? 'degraded' : 'ok',
+      timestamp: new Date().toISOString(),
+      totalPosterLocations: locations.length,
+      checks,
+    })
+  })
 }

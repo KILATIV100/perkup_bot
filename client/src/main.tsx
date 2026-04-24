@@ -17,10 +17,10 @@ const queryClient = new QueryClient({
 
 const tg = window.Telegram?.WebApp
 if (tg) {
-  tg.ready()
-  tg.expand()
-  tg.setHeaderColor('#3d1c02')
-  tg.setBackgroundColor('#fdf6ed')
+  if (typeof tg.ready === 'function') tg.ready()
+  if (typeof tg.expand === 'function') tg.expand()
+  if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#3d1c02')
+  if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#fdf6ed')
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
