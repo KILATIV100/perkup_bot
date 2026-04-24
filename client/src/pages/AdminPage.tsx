@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
 import { adminApi, loyaltyApi, api } from '../lib/api'
+import { FEATURES } from '../lib/features'
 
 const updateOrderStatus = (id: number, status: string) => api.patch(`/api/orders/${id}/status`, { status })
 
-type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations' | 'vouchers'
+type Tab = 'dashboard' | 'analytics' | 'reviews' | 'users' | 'orders' | 'menu' | 'locations' | 'vouchers'
 
 const ROLE_COLORS: Record<string, string> = {
   USER: 'bg-gray-100 text-gray-700',
@@ -65,6 +66,10 @@ export default function AdminPage() {
     ? [{ id: 'vouchers', label: 'Ваучери', icon: '🎟️' }]
     : [
         { id: 'dashboard', label: 'Дашборд', icon: '📊' },
+        ...(FEATURES.ADMIN_REVIEWS_ANALYTICS ? [
+          { id: 'analytics' as Tab, label: 'Аналітика', icon: '📈' },
+          { id: 'reviews' as Tab, label: 'Відгуки', icon: '💬' },
+        ] : []),
         { id: 'orders', label: 'Замовлення', icon: '📋' },
         { id: 'users', label: 'Юзери', icon: '👥' },
         { id: 'menu', label: 'Меню', icon: '🍽️' },
@@ -90,6 +95,8 @@ export default function AdminPage() {
       </div>
 
       {tab === 'dashboard' && <DashboardTab />}
+      {tab === 'analytics' && FEATURES.ADMIN_REVIEWS_ANALYTICS && <AnalyticsTab />}
+      {tab === 'reviews' && FEATURES.ADMIN_REVIEWS_ANALYTICS && <ReviewsTab />}
       {tab === 'users' && <UsersTab isOwner={user.role === 'OWNER'} />}
       {tab === 'orders' && <OrdersTab />}
       {tab === 'menu' && <MenuTab />}
@@ -130,6 +137,150 @@ function DashboardTab() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function AnalyticsTab() {
+  const [days, setDays] = useState(30)
+  const [stats, setStats] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await adminApi.getBasicAnalytics({ days })
+      setStats(res.data.analytics)
+    } catch {
+      setStats(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [days])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div className="text-center text-gray-400 py-8">Завантаження...</div>
+  if (!stats) return <div className="text-red-500">Помилка завантаження аналітики</div>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {[7, 30, 60].map((d) => (
+          <button
+            key={d}
+            onClick={() => setDays(d)}
+            className={`px-3 py-1.5 rounded-lg text-sm ${days === d ? 'bg-coffee-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}
+          >
+            {d} днів
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
+          <div className="text-xs text-gray-500">Виконані замовлення</div>
+          <div className="text-2xl font-bold text-gray-800">{stats.ordersCompleted}</div>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="text-xs text-gray-500">Виручка (грн)</div>
+          <div className="text-2xl font-bold text-gray-800">{Math.round(stats.revenue)}</div>
+        </div>
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+          <div className="text-xs text-gray-500">Середній чек</div>
+          <div className="text-2xl font-bold text-gray-800">{Math.round(stats.avgOrderValue)}</div>
+        </div>
+        <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
+          <div className="text-xs text-gray-500">Середній рейтинг</div>
+          <div className="text-2xl font-bold text-gray-800">{stats.avgRating.toFixed(2)}</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+        <div className="font-semibold text-gray-800 mb-2">Розподіл оцінок</div>
+        <div className="space-y-2">
+          {stats.ratingDistribution.map((row: any) => (
+            <div key={row.rating} className="flex items-center justify-between text-sm">
+              <span>{'⭐'.repeat(row.rating)}</span>
+              <span className="font-semibold text-gray-700">{row.count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReviewsTab() {
+  const [reviews, setReviews] = useState<any[]>([])
+  const [page, setPage] = useState(1)
+  const [rating, setRating] = useState('')
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await adminApi.getReviews({
+        page,
+        rating: rating ? Number(rating) : undefined,
+      })
+      setReviews(res.data.reviews || [])
+      setTotal(res.data.total || 0)
+    } catch {
+      setReviews([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
+    }
+  }, [page, rating])
+
+  useEffect(() => { load() }, [load])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <select
+          value={rating}
+          onChange={(e) => { setRating(e.target.value); setPage(1) }}
+          className="border border-gray-200 rounded-xl px-2 py-2 text-sm bg-white"
+        >
+          <option value="">Усі рейтинги</option>
+          <option value="5">⭐⭐⭐⭐⭐</option>
+          <option value="4">⭐⭐⭐⭐</option>
+          <option value="3">⭐⭐⭐</option>
+          <option value="2">⭐⭐</option>
+          <option value="1">⭐</option>
+        </select>
+      </div>
+
+      <p className="text-xs text-gray-400">Знайдено: {total}</p>
+
+      {loading ? <div className="text-center text-gray-400 py-4">...</div> : (
+        <div className="space-y-2">
+          {reviews.map((review) => (
+            <div key={review.id} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-gray-800">{'⭐'.repeat(review.rating)}</div>
+                <div className="text-xs text-gray-400">#{review.orderId}</div>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                👤 {review.user?.firstName || 'User'} • 📍 {review.location?.name || 'Unknown'}
+              </div>
+              {review.text && <div className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{review.text}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {total > 20 && (
+        <div className="flex justify-center gap-2">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            className="px-3 py-1.5 rounded-lg bg-gray-100 text-sm disabled:opacity-40">←</button>
+          <span className="px-3 py-1.5 text-sm text-gray-600">{page}</span>
+          <button onClick={() => setPage(p => p + 1)} disabled={reviews.length < 20}
+            className="px-3 py-1.5 rounded-lg bg-gray-100 text-sm disabled:opacity-40">→</button>
+        </div>
+      )}
     </div>
   )
 }
