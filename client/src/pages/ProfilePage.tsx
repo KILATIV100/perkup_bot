@@ -89,6 +89,13 @@ export default function ProfilePage() {
             <div className="text-2xl font-bold truncate">{user?.firstName || t('common.guest')}</div>
             <div className="text-sm opacity-90 mt-0.5">{level.label} {t('profile.level')}</div>
             {user?.phone && <div className="text-xs opacity-75 mt-1">📞 {user.phone}</div>}
+      {!user?.phone && (
+        <div className="mt-2">
+          <a href="#/settings" className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full font-medium">
+            ⚠️ Вкажіть телефон для офлайн балів →
+          </a>
+        </div>
+      )}
           </div>
         </div>
 
@@ -167,6 +174,12 @@ export default function ProfilePage() {
           <span className="text-gray-700 font-medium">{t('profile.settings')}</span>
           <span className="text-gray-300">›</span>
         </button>
+        {isStaff && (
+          <button onClick={() => navigate('/barista')} className="w-full text-left px-4 py-3.5 flex justify-between items-center bg-amber-50 active:bg-amber-100 transition-colors rounded-xl mb-1">
+            <span className="text-amber-800 font-bold">☕ Нарахувати бали офлайн</span>
+            <span className="text-amber-600">›</span>
+          </button>
+        )}
         {isStaff && (
           <button onClick={() => navigate('/admin')} className="w-full text-left px-4 py-3.5 flex justify-between items-center active:bg-gray-50 transition-colors">
             <span className="text-gray-700 font-medium">{t('profile.admin')}</span>
