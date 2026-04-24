@@ -3,13 +3,55 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { verifyTelegramInitData, verifyTelegramLoginWidget } from '../lib/telegram'
-import { normalizePhone } from '../lib/phone'
+import { normalizePhoneOrThrow } from '../lib/phone'
 
 const loginSchema = z.object({
   initData: z.string().min(1),
 })
 
 export default async function authRoutes(app: FastifyInstance) {
+  async function claimPendingLoyaltyEvents(userId: number, phone: string) {
+    const pending = await prisma.pendingLoyaltyEvent.findMany({
+      where: { phone, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    })
+    if (pending.length === 0) return 0
+
+    let claimedCount = 0
+    for (const event of pending) {
+      const idempotencyKey = `earn:pending:${event.id}`
+      try {
+        await prisma.$transaction([
+          prisma.pointsTransaction.create({
+            data: {
+              userId,
+              amount: event.points,
+              type: 'ORDER',
+              description: `Pending offline Poster #${event.posterTransactionId}`,
+              idempotencyKey,
+            },
+          }),
+          prisma.user.update({
+            where: { id: userId },
+            data: { points: { increment: event.points } },
+          }),
+          prisma.pendingLoyaltyEvent.update({
+            where: { id: event.id },
+            data: {
+              status: 'CLAIMED',
+              claimedByUserId: userId,
+              claimedAt: new Date(),
+            },
+          }),
+        ])
+        claimedCount += 1
+      } catch {
+        // idempotent skip
+      }
+    }
+    return claimedCount
+  }
 
   // DEV helper login for local/staging smoke tests outside Telegram WebApp.
   // Enabled only when explicitly allowed.
@@ -386,7 +428,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (body.data.language) updateData.language = body.data.language
     if (body.data.phone) {
       try {
-        updateData.phone = normalizePhone(body.data.phone)
+        updateData.phone = normalizePhoneOrThrow(body.data.phone)
       } catch (error) {
         return reply.status(400).send({ success: false, error: (error as Error).message })
       }
@@ -416,6 +458,10 @@ export default async function authRoutes(app: FastifyInstance) {
       data: updateData,
     })
 
+    if (updateData.phone) {
+      await claimPendingLoyaltyEvents(req.user.id, updateData.phone)
+    }
+
     return reply.send({ success: true })
   })
 
@@ -443,7 +489,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (body.data.language !== undefined) data.language = body.data.language
     if (body.data.phone !== undefined) {
       try {
-        data.phone = body.data.phone ? normalizePhone(body.data.phone) : null
+        data.phone = body.data.phone ? normalizePhoneOrThrow(body.data.phone) : null
       } catch (error) {
         return reply.status(400).send({ success: false, error: (error as Error).message })
       }
@@ -469,6 +515,10 @@ export default async function authRoutes(app: FastifyInstance) {
         notifPromo: true,
       },
     })
+
+    if (data.phone) {
+      await claimPendingLoyaltyEvents(req.user.id, data.phone)
+    }
 
     return reply.send({ success: true, settings: user })
   })

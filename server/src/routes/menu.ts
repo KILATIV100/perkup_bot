@@ -35,6 +35,12 @@ export default async function menuRoutes(app: FastifyInstance) {
 
     const profile = getLocationProfile(location)
 
+    let isAdmin = false
+    try {
+      await (req as any).jwtVerify?.()
+      isAdmin = ['ADMIN', 'OWNER'].includes((req as any).user?.role)
+    } catch {}
+
     const cacheKey = `menu:${locationSlug}`;
 
     // Try cache first
@@ -48,7 +54,11 @@ export default async function menuRoutes(app: FastifyInstance) {
       bundles = data.bundles;
     } else {
       products = await prisma.product.findMany({
-        where: { locationId: location.id, isAvailable: true },
+        where: {
+          locationId: location.id,
+          isAvailable: true,
+          ...(isAdmin ? {} : { isHiddenInApp: false }),
+        },
         orderBy: [{ categoryOrder: 'asc' }, { category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
       });
       bundles = await prisma.bundle.findMany({
@@ -64,6 +74,11 @@ export default async function menuRoutes(app: FastifyInstance) {
       // Cache it
       await redis.set(cacheKey, JSON.stringify({ products, bundles }), 'EX', MENU_CACHE_TTL);
     }
+
+    products = products.map((p: any) => ({
+      ...p,
+      displayImageUrl: p.imageUrl || p.posterImageUrl || null,
+    }))
 
     // Apply filters
     let filtered = sortMenuProducts(products);

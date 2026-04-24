@@ -2,34 +2,63 @@ import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { gameApi } from '../lib/api'
 import CoffeeJumpGame from '../components/CoffeeJumpGame'
-import TicTacToe from '../games/TicTacToe'
-import MemoryGame from '../games/MemoryGame'
-import QuizGame from '../games/QuizGame'
-import WordPuzzle from '../games/WordPuzzle'
+import { gameApi, radioApi } from '../lib/api'
+import { useT } from '../lib/i18n'
 
-type GameId = 'hub' | 'runner' | 'tictactoe' | 'memory' | 'quiz' | 'word'
-
-interface GameStatus {
-  daily: { current: number; max: number }
-  pending: number
-  bonus: number
-  canPlay: Record<string, boolean>
+interface LeaderEntry {
+  rank: number
+  userId: number
+  name: string
+  score: number
 }
 
-const GAMES: { id: GameId; emoji: string; name: string; desc: string; pts: string; badge: string; badgeColor: string }[] = [
-  { id: 'runner',    emoji: '🏃', name: 'PerkUp Runner',    desc: 'Стрибай, збирай зерна',   pts: 'до 10 балів',  badge: 'Соло',    badgeColor: 'bg-sky-100 text-sky-700' },
-  { id: 'tictactoe', emoji: '❌', name: 'Хрестики-нулики',  desc: 'Vs AI · Cooldown 4 год',  pts: 'Перемога 5б',  badge: '1v1',     badgeColor: 'bg-green-100 text-green-700' },
-  { id: 'memory',    emoji: '🃏', name: "Кавова пам'ять",   desc: 'Знайди всі пари',         pts: 'до 5 балів',   badge: 'Соло',    badgeColor: 'bg-sky-100 text-sky-700' },
-  { id: 'quiz',      emoji: '🎯', name: 'Кавовий квіз',     desc: '1 питання на добу',       pts: '3 бали',       badge: 'Cooldown 2г', badgeColor: 'bg-violet-100 text-violet-700' },
-  { id: 'word',      emoji: '🧩', name: 'Ворд-пазл',        desc: 'Знайди кавові слова',     pts: '1б/слово',     badge: 'Соло',    badgeColor: 'bg-sky-100 text-sky-700' },
+interface MyStats {
+  bestScore: number
+  rank: number | null
+  playsToday: number
+  playsLimit: number
+  rewards: { score: number; points: number; claimed: boolean }[]
+}
+interface GameStatus {
+  date: string
+  playsToday: number
+  playsLimit: number
+  pointsEarnedToday: number
+  pointsCapToday: number
+}
+
+interface RadioTrack {
+  id: number
+  title: string
+  artist: string
+  url: string
+  duration: number
+  genre: string
+}
+
+type Tab = 'game' | 'leaderboard' | 'rewards' | 'radio'
+type MiniGameType = 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'
+const MINI_GAMES: Array<{ type: MiniGameType; label: string; score: number }> = [
+  { type: 'TIC_TAC_TOE', label: 'Tic Tac Toe', score: 10 },
+  { type: 'PERKIE_CATCH', label: 'Runner', score: 12 },
+  { type: 'BARISTA_RUSH', label: 'Barista Rush', score: 14 },
+  { type: 'MEMORY_COFFEE', label: 'Memory', score: 8 },
+  { type: 'PERKIE_JUMP', label: 'Word Puzzle', score: 6 },
 ]
 
 export default function FunPage() {
-  const [game, setGame] = useState<GameId>('hub')
-  const [status, setStatus] = useState<GameStatus | null>(null)
-  const [loadingStatus, setLoadingStatus] = useState(true)
-  const [toast, setToast] = useState('')
-  const navigate = useNavigate()
+  const [tab, setTab] = useState<Tab>('game')
+  const [lastScore, setLastScore] = useState<number | null>(null)
+  const [lastResult, setLastResult] = useState<{
+    isNewRecord: boolean; bestScore: number; rank: number | null; earnedPoints: number
+  } | null>(null)
+  const [leaderboard, setLeaderboard] = useState<LeaderEntry[]>([])
+  const [lbLoading, setLbLoading] = useState(false)
+  const [stats, setStats] = useState<MyStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [gameStatus, setGameStatus] = useState<GameStatus | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [finishingType, setFinishingType] = useState<string | null>(null)
 
   // Скрол вгору при відкритті гри
   useEffect(() => {
@@ -48,10 +77,66 @@ export default function FunPage() {
 
   useEffect(() => { loadStatus() }, [game, loadStatus])
 
-  const showToast = (msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(''), 3500)
-  }
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true)
+    try {
+      const res = await gameApi.getMyStats()
+      setStats(res.data)
+    } catch { setStats(null) }
+    finally { setStatsLoading(false) }
+  }, [])
+
+  const loadGameStatus = useCallback(async () => {
+    setStatusLoading(true)
+    try {
+      const res = await gameApi.getStatus()
+      setGameStatus(res.data)
+    } catch {
+      setGameStatus(null)
+    } finally {
+      setStatusLoading(false)
+    }
+  }, [])
+
+  const finishMiniGame = useCallback(async (type: MiniGameType, score: number) => {
+    setFinishingType(type)
+    try {
+      await gameApi.finish({ type, score })
+      await loadGameStatus()
+      await loadStats()
+    } finally {
+      setFinishingType(null)
+    }
+  }, [loadGameStatus, loadStats])
+
+  // Radio handlers
+  const loadRadio = useCallback(async () => {
+    setRadioLoading(true)
+    try {
+      const r = await radioApi.now()
+      if (r.data.currentTrack) setRadioTrack(r.data.currentTrack)
+    } catch { /* no tracks */ }
+    finally { setRadioLoading(false) }
+  }, [])
+
+  const syncAudio = useCallback(async () => {
+    try {
+      const r = await radioApi.now()
+      const data = r.data
+      if (!data.currentTrack) return
+      const audio = audioRef.current
+      if (!audio) return
+      if (data.currentTrack.id !== radioTrack?.id) {
+        setRadioTrack(data.currentTrack)
+        audio.src = data.currentTrack.url
+        audio.currentTime = data.position
+        if (radioPlaying) audio.play().catch(() => {})
+      } else {
+        const drift = Math.abs(audio.currentTime - data.position)
+        if (drift > 3) audio.currentTime = data.position
+      }
+    } catch { /* ignore */ }
+  }, [radioTrack, radioPlaying])
 
   const handleFinish = useCallback((pts: number) => {
     if (pts > 0) {
@@ -59,21 +144,29 @@ export default function FunPage() {
     } else {
       showToast('Наступного разу пощастить!')
     }
-    loadStatus()
-    setTimeout(() => setGame('hub'), 2500)
-  }, [loadStatus])
+  }
 
-  const dailyUsed = status?.daily.current ?? 0
-  const dailyMax = status?.daily.max ?? 60
-  const progress = Math.min(100, Math.round((dailyUsed / dailyMax) * 100))
+  useEffect(() => {
+    if (tab === 'leaderboard') loadLeaderboard()
+    if (tab === 'rewards') { loadStats(); loadGameStatus() }
+    if (tab === 'game') loadGameStatus()
+    if (tab === 'radio') loadRadio()
+  }, [tab, loadLeaderboard, loadStats, loadGameStatus, loadRadio])
 
-  // ── Ігровий екран ──────────────────────────────────────────────
-  if (game !== 'hub') {
-    const info = GAMES.find(g => g.id === game)!
-    return (
-      <div className="min-h-screen bg-[#FAF7F4]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-stone-200 px-4 py-3 flex items-center gap-3">
+  useEffect(() => {
+    return () => { if (syncRef.current) clearInterval(syncRef.current) }
+  }, [])
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tabs */}
+      <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10">
+        {([
+          { key: 'game' as Tab, label: `🎮 ${tFn('fun.tab.game')}` },
+          { key: 'radio' as Tab, label: `🎵 ${tFn('fun.tab.radio')}` },
+          { key: 'leaderboard' as Tab, label: `🏆 ${tFn('fun.tab.top')}` },
+          { key: 'rewards' as Tab, label: `🎁 ${tFn('fun.tab.rewards')}` },
+        ]).map(t => (
           <button
             onClick={() => setGame('hub')}
             className="w-8 h-8 flex items-center justify-center rounded-xl bg-stone-100 text-stone-600 hover:bg-stone-200 transition-colors text-sm"
@@ -83,12 +176,33 @@ export default function FunPage() {
           <span className="font-semibold text-stone-800">{info.emoji} {info.name}</span>
         </div>
 
-        <div className="max-w-md mx-auto py-4">
-          {game === 'runner'    && <div className="px-4"><CoffeeJumpGame onGameOver={(s: number) => handleFinish(Math.min(Math.floor(s / 100), 10))} /></div>}
-          {game === 'tictactoe' && <TicTacToe onFinish={handleFinish} />}
-          {game === 'memory'    && <MemoryGame onFinish={handleFinish} />}
-          {game === 'quiz'      && <QuizGame onFinish={handleFinish} />}
-          {game === 'word'      && <WordPuzzle onFinish={handleFinish} />}
+          <CoffeeJumpGame onGameOver={handleGameOver} />
+
+          <div className="bg-white border border-gray-100 rounded-xl p-3">
+            <div className="font-bold text-gray-700 text-sm mb-2">Mini games progress</div>
+            {statusLoading ? (
+              <div className="text-xs text-gray-400">Loading...</div>
+            ) : gameStatus ? (
+              <div className="text-xs text-gray-500 mb-2">
+                Plays today: <b>{gameStatus.playsToday}/{gameStatus.playsLimit}</b> · Points: <b>{gameStatus.pointsEarnedToday}/{gameStatus.pointsCapToday}</b>
+              </div>
+            ) : (
+              <div className="text-xs text-gray-400 mb-2">Status unavailable</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              {MINI_GAMES.map((game) => (
+                <button
+                  key={game.type}
+                  onClick={() => finishMiniGame(game.type, game.score)}
+                  disabled={!!finishingType}
+                  className="px-2 py-2 rounded-lg bg-coffee-50 border border-coffee-200 text-xs font-medium text-coffee-700 disabled:opacity-50"
+                >
+                  {finishingType === game.type ? 'Saving...' : game.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {toast && (
@@ -177,6 +291,15 @@ export default function FunPage() {
                   {isLoading ? '···' : canPlay ? '▶' : '⏸'}
                 </div>
               </div>
+            </>
+          ) : (
+            <div className="text-center text-gray-400 py-12">
+              <span className="text-4xl block mb-2">🎮</span>
+              {tFn('fun.playOnceForStats')}
+            </div>
+          )}
+        </div>
+      )}
 
               {/* Cooldown bar */}
               {!isLoading && !canPlay && (

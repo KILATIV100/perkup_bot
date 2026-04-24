@@ -2,7 +2,7 @@ import axios from 'axios'
 import { prisma } from '../lib/prisma'
 import { redisCache } from '../lib/redis'
 import { getLocationProfile } from '../lib/locationProfile'
-import { normalizePhone } from '../lib/phone'
+import { normalizePhoneOrThrow } from '../lib/phone'
 
 const CATEGORY_ID_MAP: Record<string, string> = {
   '1': 'coffee', '3': 'cold', '5': 'addons', '6': 'coffee',
@@ -79,7 +79,7 @@ export async function createPosterIncomingOrder(input: {
 
   const payload: Record<string, unknown> = {
     spot_id: input.location.posterSpotId,
-    phone: normalizePhone(input.phone),
+    phone: normalizePhoneOrThrow(input.phone),
     first_name: input.firstName,
     service_mode: getPosterServiceMode(input.location),
     products: input.products,
@@ -133,7 +133,7 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
       const name = String(item.product_name || '')
       const price = parsePrice(item)
       const category = mapCategory(String(item.menu_category_id || '0'))
-      const imageUrl = buildImageUrl(item.photo, cfg.subdomain)
+      const posterImageUrl = buildImageUrl(item.photo, cfg.subdomain)
       const isAvailable = item.out !== 1
       const description = item.product_production_description
         ? String(item.product_production_description)
@@ -146,14 +146,14 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
       if (existing) {
         await prisma.product.update({
           where: { id: existing.id },
-          data: { name, price, category, imageUrl, isAvailable, description },
+          data: { name, price, category, posterImageUrl, isAvailable },
         })
       } else {
         await prisma.product.create({
           data: {
             locationId: location.id,
             posterProductId,
-            name, price, category, imageUrl,
+            name, price, category, posterImageUrl,
             isAvailable, description,
             allergens: [], tags: [],
           },

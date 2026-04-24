@@ -646,6 +646,12 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "hasPrinter" BOOLEAN NOT NULL DEFAULT false', 'Location.hasPrinter')
     await run('ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "printerIp" TEXT', 'Location.printerIp')
     await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "categoryOrder" INTEGER NOT NULL DEFAULT 0', 'Product.categoryOrder')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "posterImageUrl" TEXT', 'Product.posterImageUrl')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isNew" BOOLEAN NOT NULL DEFAULT false', 'Product.isNew')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isTop" BOOLEAN NOT NULL DEFAULT false', 'Product.isTop')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isSeasonal" BOOLEAN NOT NULL DEFAULT false', 'Product.isSeasonal')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isRecommended" BOOLEAN NOT NULL DEFAULT false', 'Product.isRecommended')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isHiddenInApp" BOOLEAN NOT NULL DEFAULT false', 'Product.isHiddenInApp')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "birthDate" TIMESTAMP', 'User.birthDate')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastBirthdayBonus" INTEGER', 'User.lastBirthdayBonus')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "referredById" INTEGER', 'User.referredById')
@@ -658,6 +664,29 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notifSpin" BOOLEAN NOT NULL DEFAULT true', 'User.notifSpin')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notifWinback" BOOLEAN NOT NULL DEFAULT true', 'User.notifWinback')
     await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "radioGenre" TEXT DEFAULT 'all'`, 'User.radioGenre')
+    await run(`DO $$ BEGIN
+      CREATE TYPE "PendingLoyaltyStatus" AS ENUM ('PENDING','CLAIMED','EXPIRED');
+    EXCEPTION
+      WHEN duplicate_object THEN null;
+    END $$;`, 'Enum PendingLoyaltyStatus')
+    await run(`CREATE TABLE IF NOT EXISTS "PendingLoyaltyEvent" (
+      "id" TEXT PRIMARY KEY,
+      "phone" TEXT NOT NULL,
+      "locationId" INTEGER,
+      "posterAccountId" TEXT,
+      "posterTransactionId" TEXT NOT NULL,
+      "totalAmount" INTEGER NOT NULL,
+      "points" INTEGER NOT NULL,
+      "status" "PendingLoyaltyStatus" NOT NULL DEFAULT 'PENDING',
+      "expiresAt" TIMESTAMP,
+      "claimedByUserId" INTEGER,
+      "claimedAt" TIMESTAMP,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table PendingLoyaltyEvent')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "PendingLoyaltyEvent_posterAccountId_posterTransactionId_key" ON "PendingLoyaltyEvent" ("posterAccountId","posterTransactionId")', 'PendingLoyaltyEvent unique')
+    await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_phone_idx" ON "PendingLoyaltyEvent" ("phone")', 'PendingLoyaltyEvent phone idx')
+    await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_status_idx" ON "PendingLoyaltyEvent" ("status")', 'PendingLoyaltyEvent status idx')
 
     return reply.send({ success: true, results })
   })
@@ -668,6 +697,43 @@ export default async function adminRoutes(app: FastifyInstance) {
     const kronaCount = krona ? await prisma.product.count({ where: { locationId: krona.id } }) : 0
     const pryCount = pryozerny ? await prisma.product.count({ where: { locationId: pryozerny.id } }) : 0
     return reply.send({ success: true, kronaCount, pryCount })
+  })
+
+  app.get('/loyalty/pending', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      status: z.enum(['PENDING', 'CLAIMED', 'EXPIRED']).optional(),
+      phone: z.string().trim().min(3).optional(),
+      locationId: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(100),
+    }).safeParse(req.query)
+
+    const where: any = {}
+    if (query.success && query.data.status) where.status = query.data.status
+    if (query.success && query.data.phone) where.phone = { contains: query.data.phone }
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const pending = await prisma.pendingLoyaltyEvent.findMany({
+      where,
+      include: { location: { select: { id: true, slug: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: query.success ? query.data.limit : 100,
+    })
+
+    return reply.send({
+      success: true,
+      items: pending.map((item: any) => ({
+        id: item.id,
+        phone: item.phone,
+        location: item.location,
+        posterAccountId: item.posterAccountId,
+        posterTransactionId: item.posterTransactionId,
+        totalAmount: item.totalAmount,
+        points: item.points,
+        status: item.status,
+        createdAt: item.createdAt,
+        claimedAt: item.claimedAt,
+      })),
+    })
   })
 
   // POST /api/admin/broadcast — called from bot (OWNER) via BOT_SECRET header.
@@ -719,113 +785,4 @@ export default async function adminRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, sent, total: users.length })
   })
-  // POST /api/admin/manual-award — ручне нарахування балів баристою по телефону
-  // Підтримує x-bot-secret авторизацію для бота
-  app.post('/manual-award', async (req: any, reply: any) => {
-    const botSecret = req.headers['x-bot-secret']
-    if (botSecret !== process.env.BOT_SECRET) {
-      // Якщо не бот — перевіряємо staff auth
-      try { await req.jwtVerify() } catch { return reply.status(401).send({ success: false, error: 'Unauthorized' }) }
-      const userId: number = req.user?.id
-      const staff = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-      if (!staff || !['BARISTA', 'ADMIN', 'OWNER'].includes(staff.role)) {
-        return reply.status(403).send({ success: false, error: 'Forbidden' })
-      }
-    }
-    const { phone, amount, checkAmount, reason, locationSlug } = req.body as any
-    // amount = прямо бали, checkAmount = сума чеку (сервер рахує сам)
-    if (!phone || (!amount && !checkAmount)) {
-      return reply.status(400).send({ success: false, error: 'Phone and amount required' })
-    }
-
-    const { normalizePhone } = await import('../lib/phone')
-    let normalized: string
-    try { normalized = normalizePhone(String(phone)) }
-    catch { return reply.status(400).send({ success: false, error: 'Invalid phone number' }) }
-
-    const user = await prisma.user.findFirst({ where: { phone: normalized } })
-    if (!user) {
-      return reply.status(404).send({ success: false, error: 'User not found by this phone number' })
-    }
-
-    // Розраховуємо бали
-    let pts: number
-    if (checkAmount && Number(checkAmount) > 0) {
-      // Сума чеку → розраховуємо відсоток по рівню клієнта
-      const { calcEarnedPoints } = await import('../lib/loyalty')
-      const tempUser = await prisma.user.findFirst({
-        where: { phone: normalized },
-        select: { points: true }
-      })
-      pts = calcEarnedPoints(Number(checkAmount), tempUser?.points || 0)
-    } else {
-      pts = Math.round(Number(amount))
-    }
-    const desc = reason || ('Manual award by barista' + (locationSlug ? ' at ' + locationSlug : ''))
-    const idempotencyKey = 'manual-' + user.id + '-' + Date.now()
-
-    await prisma.$transaction([
-      prisma.user.update({ where: { id: user.id }, data: { points: { increment: pts } } }),
-      prisma.pointsTransaction.create({
-        data: { userId: user.id, amount: pts, type: 'ORDER', description: desc, idempotencyKey }
-      }),
-    ])
-
-    const updated = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { id: true, firstName: true, lastName: true, points: true, level: true, phone: true }
-    })
-
-    // Telegram сповіщення
-    const BOT = process.env.BOT_TOKEN || ''
-    if (BOT && user.telegramId) {
-      const msg = [
-        '\u2615 *\u0420\u0443\u0447\u043d\u0435 \u043d\u0430\u0440\u0430\u0445\u0443\u0432\u0430\u043d\u043d\u044f*',
-        '*+' + pts + ' \u0431\u0430\u043b\u0456\u0432* \u043d\u0430\u0440\u0430\u0445\u043e\u0432\u0430\u043d\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u043e\u044e',
-        '\u0411\u0430\u043b\u0430\u043d\u0441: ' + (updated?.points || 0) + ' \u0431\u0430\u043b\u0456\u0432',
-        '_' + (desc) + '_',
-      ].join('\n')
-      fetch('https://api.telegram.org/bot' + BOT + '/sendMessage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: String(user.telegramId), text: msg, parse_mode: 'Markdown' })
-      }).catch(() => {})
-    }
-
-    return reply.send({ success: true, user: updated, pointsAwarded: pts })
-  })
-
-  // GET /api/admin/find-user-by-phone — пошук клієнта по телефону
-  app.get('/find-user-by-phone', async (req: any, reply: any) => {
-    const botSecret = req.headers['x-bot-secret']
-    if (botSecret !== process.env.BOT_SECRET) {
-      try { await req.jwtVerify() } catch { return reply.status(401).send({ success: false, error: 'Unauthorized' }) }
-    }
-    const phone = (req.query as any)?.phone as string
-    if (!phone) return reply.status(400).send({ success: false, error: 'Phone required' })
-
-    const { normalizePhone } = await import('../lib/phone')
-    let normalized: string
-    try { normalized = normalizePhone(String(phone)) }
-    catch { return reply.status(400).send({ success: false, error: 'Invalid phone' }) }
-
-    const user = await prisma.user.findFirst({
-      where: { phone: normalized },
-      select: {
-        id: true, firstName: true, lastName: true, phone: true,
-        points: true, level: true, monthlyOrders: true,
-        transactions: {
-          where: { type: 'ORDER' },
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-          select: { amount: true, description: true, createdAt: true }
-        }
-      }
-    })
-
-    if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
-    return reply.send({ success: true, user })
-  })
-
-
 }
