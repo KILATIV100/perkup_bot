@@ -83,11 +83,16 @@ export default async function menuRoutes(app: FastifyInstance) {
       await redis.set(cacheKey, JSON.stringify({ products, bundles }), 'EX', MENU_CACHE_TTL);
     }
 
-    products = products.map((p: any) => ({
-      ...p,
-      displayImageUrl: p.imageUrl || p.posterImageUrl || null,
-      primaryBadge: getPrimaryBadge(p),
-    }))
+    products = products.map((p: any) => {
+      const resolvedImageUrl = p.imageUrl || p.posterImageUrl || null
+      return {
+        ...p,
+        displayImageUrl: resolvedImageUrl,
+        resolvedImageUrl,
+        hasImage: Boolean(resolvedImageUrl),
+        primaryBadge: getPrimaryBadge(p),
+      }
+    })
 
     // Apply filters
     let filtered = sortMenuProducts(products);
