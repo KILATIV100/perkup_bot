@@ -16,6 +16,20 @@ interface GameStatus {
   canPlay: Record<string, boolean>
 }
 
+function normalizeGameStatus(data: any): GameStatus {
+  const dailyCurrent = data?.daily?.current ?? data?.pointsEarnedToday ?? 0
+  const dailyMax = data?.daily?.max ?? data?.pointsCapToday ?? 60
+  return {
+    daily: {
+      current: Number(dailyCurrent) || 0,
+      max: Number(dailyMax) || 60,
+    },
+    pending: Number(data?.pending) || 0,
+    bonus: Number(data?.bonus) || 0,
+    canPlay: data?.canPlay && typeof data.canPlay === 'object' ? data.canPlay : {},
+  }
+}
+
 const GAMES = [
   { id: 'runner'    as GameId, emoji: '🏃', name: 'PerkUp Runner',   desc: 'Стрибай, збирай зерна',   pts: 'до 10 балів', badge: 'Соло',        badgeColor: 'bg-sky-100 text-sky-700' },
   { id: 'tictactoe' as GameId, emoji: '❌', name: 'Хрестики-нулики', desc: 'Vs AI · Cooldown 4 год',  pts: 'Перемога 5б', badge: '1v1',          badgeColor: 'bg-green-100 text-green-700' },
@@ -38,7 +52,7 @@ export default function FunPage() {
   const loadStatus = useCallback(() => {
     setLoadingStatus(true)
     gameApi.getStatus()
-      .then((r: any) => setStatus(r.data))
+      .then((r: any) => setStatus(normalizeGameStatus(r.data)))
       .catch(() => {})
       .finally(() => setLoadingStatus(false))
   }, [])
@@ -54,9 +68,10 @@ export default function FunPage() {
     setTimeout(() => setGame('hub'), 2500)
   }, [loadStatus])
 
-  const dailyUsed = status?.daily.current ?? 0
-  const dailyMax  = status?.daily.max ?? 60
+  const dailyUsed = status?.daily?.current ?? 0
+  const dailyMax  = status?.daily?.max ?? 60
   const progress  = Math.min(100, Math.round((dailyUsed / dailyMax) * 100))
+  const hasValidStatus = !!status && Number.isFinite(dailyUsed) && Number.isFinite(dailyMax) && dailyMax > 0
 
   if (game !== 'hub') {
     const info = GAMES.find(g => g.id === game)!
@@ -102,9 +117,15 @@ export default function FunPage() {
         <span>Бали нараховуються одразу. Ліміт 60 балів на день.</span>
       </div>
 
+      {(loadingStatus || !hasValidStatus) && (
+        <div className="mx-4 mt-4 bg-white border border-stone-200 rounded-2xl px-4 py-3 text-sm text-stone-600">
+          {loadingStatus ? 'Завантажуємо ігровий статус…' : 'Тимчасово не вдалось отримати статус ігор. Спробуй ще раз.'}
+        </div>
+      )}
+
       <div className="px-4 mt-5 space-y-3">
         {GAMES.map(g => {
-          const canPlay = !loadingStatus && status?.canPlay[g.id.toUpperCase()] !== false
+          const canPlay = hasValidStatus && !loadingStatus && status?.canPlay?.[g.id.toUpperCase()] !== false
           return (
             <button key={g.id} onClick={() => setGame(g.id)}
               className="w-full text-left bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md active:scale-[0.98] transition-all overflow-hidden">
