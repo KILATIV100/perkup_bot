@@ -20,7 +20,7 @@ const GAMES: { id: GameId; emoji: string; name: string; desc: string; pts: strin
   { id: 'runner',    emoji: '🏃', name: 'PerkUp Runner',    desc: 'Стрибай, збирай зерна',   pts: 'до 10 балів',  badge: 'Соло',    badgeColor: 'bg-sky-100 text-sky-700' },
   { id: 'tictactoe', emoji: '❌', name: 'Хрестики-нулики',  desc: 'Vs AI · Cooldown 4 год',  pts: 'Перемога 5б',  badge: '1v1',     badgeColor: 'bg-green-100 text-green-700' },
   { id: 'memory',    emoji: '🃏', name: "Кавова пам'ять",   desc: 'Знайди всі пари',         pts: 'до 5 балів',   badge: 'Соло',    badgeColor: 'bg-sky-100 text-sky-700' },
-  { id: 'quiz',      emoji: '🎯', name: 'Кавовий квіз',     desc: '1 питання на добу',       pts: '3 бали',       badge: '1×/день', badgeColor: 'bg-violet-100 text-violet-700' },
+  { id: 'quiz',      emoji: '🎯', name: 'Кавовий квіз',     desc: '1 питання на добу',       pts: '3 бали',       badge: 'Cooldown 2г', badgeColor: 'bg-violet-100 text-violet-700' },
   { id: 'word',      emoji: '🧩', name: 'Ворд-пазл',        desc: 'Знайди кавові слова',     pts: '1б/слово',     badge: 'Соло',    badgeColor: 'bg-sky-100 text-sky-700' },
 ]
 
