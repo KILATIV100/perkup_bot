@@ -107,6 +107,28 @@ export const radioApi = {
   setGenre: (genre: string) => api.post('/api/radio/user-genre', { genre }),
 }
 
+export const communityApi = {
+  getChatMessages: (params: { channel: 'GENERAL' | 'BOARD_GAMES' | 'MOVIE_NIGHTS'; after?: string; limit?: number }) =>
+    api.get('/api/community/chat/messages', { params }),
+  postChatMessage: (data: { channel: 'GENERAL' | 'BOARD_GAMES' | 'MOVIE_NIGHTS'; text: string; replyToId?: string }) =>
+    api.post('/api/community/chat/messages', data),
+  deleteChatMessage: (id: string) => api.delete(`/api/community/chat/messages/${id}`),
+  getBoardGames: () => api.get('/api/community/board-games'),
+  getMeetups: (params?: { locationId?: number; date?: string; status?: 'OPEN' | 'FULL' | 'CANCELLED' | 'COMPLETED' }) =>
+    api.get('/api/community/board-game-meetups', { params }),
+  createMeetup: (data: { gameId?: string; locationId?: number; title: string; description?: string; startsAt: string; maxPlayers: number }) =>
+    api.post('/api/community/board-game-meetups', data),
+  joinMeetup: (id: string) => api.post(`/api/community/board-game-meetups/${id}/join`),
+  leaveMeetup: (id: string) => api.post(`/api/community/board-game-meetups/${id}/leave`),
+  cancelMeetup: (id: string) => api.post(`/api/community/board-game-meetups/${id}/cancel`),
+  getEvents: (params?: { type?: 'MOVIE_NIGHT' | 'BOARD_GAME_NIGHT' | 'MEETUP' | 'OTHER'; locationId?: number; upcoming?: boolean }) =>
+    api.get('/api/community/events', { params }),
+  getEventById: (id: string) => api.get(`/api/community/events/${id}`),
+  joinEvent: (id: string) => api.post(`/api/community/events/${id}/join`),
+  leaveEvent: (id: string) => api.post(`/api/community/events/${id}/leave`),
+  voteMovie: (id: string, optionId: string) => api.post(`/api/community/events/${id}/vote-movie`, { optionId }),
+}
+
 export const adminApi = {
   findUserByPhone: (phone: string) => api.get('/api/admin/find-user-by-phone?phone=' + encodeURIComponent(phone)),
   manualAward: (phone: string, amount: number, reason: string, locationSlug?: string) =>

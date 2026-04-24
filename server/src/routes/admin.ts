@@ -687,6 +687,101 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('CREATE UNIQUE INDEX IF NOT EXISTS "PendingLoyaltyEvent_posterAccountId_posterTransactionId_key" ON "PendingLoyaltyEvent" ("posterAccountId","posterTransactionId")', 'PendingLoyaltyEvent unique')
     await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_phone_idx" ON "PendingLoyaltyEvent" ("phone")', 'PendingLoyaltyEvent phone idx')
     await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_status_idx" ON "PendingLoyaltyEvent" ("status")', 'PendingLoyaltyEvent status idx')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityChannel" AS ENUM ('GENERAL','BOARD_GAMES','MOVIE_NIGHTS'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityChannel')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityMessageStatus" AS ENUM ('VISIBLE','HIDDEN','DELETED_BY_USER','DELETED_BY_ADMIN'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityMessageStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "BoardGameDifficulty" AS ENUM ('EASY','MEDIUM','HARD'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum BoardGameDifficulty')
+    await run(`DO $$ BEGIN CREATE TYPE "BoardGameMeetupStatus" AS ENUM ('OPEN','FULL','CANCELLED','COMPLETED'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum BoardGameMeetupStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "MeetupParticipantStatus" AS ENUM ('JOINED','CANCELLED','NO_SHOW'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum MeetupParticipantStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityEventType" AS ENUM ('MOVIE_NIGHT','BOARD_GAME_NIGHT','MEETUP','OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityEventType')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityEventStatus" AS ENUM ('DRAFT','PUBLISHED','CANCELLED','COMPLETED'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityEventStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "EventParticipantStatus" AS ENUM ('GOING','MAYBE','CANCELLED','ATTENDED','NO_SHOW'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum EventParticipantStatus')
+    await run(`CREATE TABLE IF NOT EXISTS "CommunityMessage" (
+      "id" TEXT PRIMARY KEY,
+      "userId" INTEGER NOT NULL,
+      "channel" "CommunityChannel" NOT NULL,
+      "text" TEXT NOT NULL,
+      "status" "CommunityMessageStatus" NOT NULL DEFAULT 'VISIBLE',
+      "replyToId" TEXT,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table CommunityMessage')
+    await run('CREATE INDEX IF NOT EXISTS "CommunityMessage_channel_createdAt_idx" ON "CommunityMessage" ("channel","createdAt")', 'CommunityMessage channel+createdAt idx')
+    await run('CREATE INDEX IF NOT EXISTS "CommunityMessage_userId_idx" ON "CommunityMessage" ("userId")', 'CommunityMessage userId idx')
+    await run('CREATE INDEX IF NOT EXISTS "CommunityMessage_status_idx" ON "CommunityMessage" ("status")', 'CommunityMessage status idx')
+    await run(`CREATE TABLE IF NOT EXISTS "BoardGame" (
+      "id" TEXT PRIMARY KEY,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "imageUrl" TEXT,
+      "minPlayers" INTEGER,
+      "maxPlayers" INTEGER,
+      "avgDurationMin" INTEGER,
+      "difficulty" "BoardGameDifficulty",
+      "isAvailable" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table BoardGame')
+    await run(`CREATE TABLE IF NOT EXISTS "BoardGameMeetup" (
+      "id" TEXT PRIMARY KEY,
+      "gameId" TEXT,
+      "creatorId" INTEGER NOT NULL,
+      "locationId" INTEGER,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "startsAt" TIMESTAMP NOT NULL,
+      "maxPlayers" INTEGER NOT NULL,
+      "status" "BoardGameMeetupStatus" NOT NULL DEFAULT 'OPEN',
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table BoardGameMeetup')
+    await run(`CREATE TABLE IF NOT EXISTS "BoardGameMeetupParticipant" (
+      "id" TEXT PRIMARY KEY,
+      "meetupId" TEXT NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "status" "MeetupParticipantStatus" NOT NULL DEFAULT 'JOINED',
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table BoardGameMeetupParticipant')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "BoardGameMeetupParticipant_meetupId_userId_key" ON "BoardGameMeetupParticipant" ("meetupId","userId")', 'BoardGameMeetupParticipant unique')
+    await run(`CREATE TABLE IF NOT EXISTS "CommunityEvent" (
+      "id" TEXT PRIMARY KEY,
+      "type" "CommunityEventType" NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "imageUrl" TEXT,
+      "locationId" INTEGER,
+      "startsAt" TIMESTAMP NOT NULL,
+      "endsAt" TIMESTAMP,
+      "capacity" INTEGER,
+      "status" "CommunityEventStatus" NOT NULL DEFAULT 'PUBLISHED',
+      "createdById" INTEGER,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table CommunityEvent')
+    await run(`CREATE TABLE IF NOT EXISTS "CommunityEventParticipant" (
+      "id" TEXT PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "status" "EventParticipantStatus" NOT NULL DEFAULT 'GOING',
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table CommunityEventParticipant')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "CommunityEventParticipant_eventId_userId_key" ON "CommunityEventParticipant" ("eventId","userId")', 'CommunityEventParticipant unique')
+    await run(`CREATE TABLE IF NOT EXISTS "MovieOption" (
+      "id" TEXT PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "posterUrl" TEXT,
+      "sortOrder" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table MovieOption')
+    await run(`CREATE TABLE IF NOT EXISTS "MovieVote" (
+      "id" TEXT PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "optionId" TEXT NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table MovieVote')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "MovieVote_eventId_userId_key" ON "MovieVote" ("eventId","userId")', 'MovieVote unique')
 
     return reply.send({ success: true, results })
   })

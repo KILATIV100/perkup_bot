@@ -1,9 +1,7 @@
-import { useState, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { gameApi } from '../lib/api'
+import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import CoffeeJumpGame from '../components/CoffeeJumpGame'
-import { gameApi, radioApi } from '../lib/api'
-import { useT } from '../lib/i18n'
+import { gameApi } from '../lib/api'
 
 interface LeaderEntry {
   rank: number
@@ -27,17 +25,17 @@ interface GameStatus {
   pointsCapToday: number
 }
 
-interface RadioTrack {
-  id: number
-  title: string
-  artist: string
-  url: string
-  duration: number
-  genre: string
+interface GameStatus {
+  date: string
+  playsToday: number
+  playsLimit: number
+  pointsEarnedToday: number
+  pointsCapToday: number
 }
 
-type Tab = 'game' | 'leaderboard' | 'rewards' | 'radio'
+type Tab = 'game' | 'leaderboard' | 'rewards'
 type MiniGameType = 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'
+
 const MINI_GAMES: Array<{ type: MiniGameType; label: string; score: number }> = [
   { type: 'TIC_TAC_TOE', label: 'Tic Tac Toe', score: 10 },
   { type: 'PERKIE_CATCH', label: 'Runner', score: 12 },
@@ -60,19 +58,26 @@ export default function FunPage() {
   const [statusLoading, setStatusLoading] = useState(false)
   const [finishingType, setFinishingType] = useState<string | null>(null)
 
-  // Скрол вгору при відкритті гри
-  useEffect(() => {
-    if (game !== 'hub') {
-      window.scrollTo({ top: 0, behavior: 'instant' })
+  const handleGameOver = useCallback(async (score: number) => {
+    setLastScore(score)
+    try {
+      const res = await gameApi.submitScore(score)
+      setLastResult(res.data)
+    } catch {
+      setLastResult(null)
     }
   }, [game])
 
-  const loadStatus = useCallback(() => {
-    setLoadingStatus(true)
-    gameApi.getStatus()
-      .then((r: any) => setStatus(r.data))
-      .catch(() => {})
-      .finally(() => setLoadingStatus(false))
+  const loadLeaderboard = useCallback(async () => {
+    setLbLoading(true)
+    try {
+      const res = await gameApi.getLeaderboard()
+      setLeaderboard(res.data.leaderboard || [])
+    } catch {
+      setLeaderboard([])
+    } finally {
+      setLbLoading(false)
+    }
   }, [])
 
   useEffect(() => { loadStatus() }, [game, loadStatus])
@@ -82,8 +87,11 @@ export default function FunPage() {
     try {
       const res = await gameApi.getMyStats()
       setStats(res.data)
-    } catch { setStats(null) }
-    finally { setStatsLoading(false) }
+    } catch {
+      setStats(null)
+    } finally {
+      setStatsLoading(false)
+    }
   }, [])
 
   const loadGameStatus = useCallback(async () => {
@@ -109,72 +117,60 @@ export default function FunPage() {
     }
   }, [loadGameStatus, loadStats])
 
-  // Radio handlers
-  const loadRadio = useCallback(async () => {
-    setRadioLoading(true)
-    try {
-      const r = await radioApi.now()
-      if (r.data.currentTrack) setRadioTrack(r.data.currentTrack)
-    } catch { /* no tracks */ }
-    finally { setRadioLoading(false) }
-  }, [])
-
-  const syncAudio = useCallback(async () => {
-    try {
-      const r = await radioApi.now()
-      const data = r.data
-      if (!data.currentTrack) return
-      const audio = audioRef.current
-      if (!audio) return
-      if (data.currentTrack.id !== radioTrack?.id) {
-        setRadioTrack(data.currentTrack)
-        audio.src = data.currentTrack.url
-        audio.currentTime = data.position
-        if (radioPlaying) audio.play().catch(() => {})
-      } else {
-        const drift = Math.abs(audio.currentTime - data.position)
-        if (drift > 3) audio.currentTime = data.position
-      }
-    } catch { /* ignore */ }
-  }, [radioTrack, radioPlaying])
-
-  const handleFinish = useCallback((pts: number) => {
-    if (pts > 0) {
-      showToast(`+${pts} балів зараховано! ☕`)
-    } else {
-      showToast('Наступного разу пощастить!')
-    }
-  }
-
   useEffect(() => {
     if (tab === 'leaderboard') loadLeaderboard()
-    if (tab === 'rewards') { loadStats(); loadGameStatus() }
+    if (tab === 'rewards') loadStats()
     if (tab === 'game') loadGameStatus()
-    if (tab === 'radio') loadRadio()
-  }, [tab, loadLeaderboard, loadStats, loadGameStatus, loadRadio])
-
-  useEffect(() => {
-    return () => { if (syncRef.current) clearInterval(syncRef.current) }
-  }, [])
+  }, [tab, loadLeaderboard, loadStats, loadGameStatus])
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tabs */}
-      <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10">
+      <div className="px-3 pt-3">
+        <Link to="/community" className="block bg-gradient-to-r from-coffee-50 to-amber-50 border border-coffee-200 rounded-xl p-3">
+          <div className="font-bold text-coffee-800">Клуб PerkUp</div>
+          <div className="text-xs text-gray-600">Настільні ігри, кіновечори та люди поруч.</div>
+        </Link>
+      </div>
+
+      <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10 mt-2">
         {([
-          { key: 'game' as Tab, label: `🎮 ${tFn('fun.tab.game')}` },
-          { key: 'radio' as Tab, label: `🎵 ${tFn('fun.tab.radio')}` },
-          { key: 'leaderboard' as Tab, label: `🏆 ${tFn('fun.tab.top')}` },
-          { key: 'rewards' as Tab, label: `🎁 ${tFn('fun.tab.rewards')}` },
+          { key: 'game' as Tab, label: '🎮 Гра' },
+          { key: 'leaderboard' as Tab, label: '🏆 Топ' },
+          { key: 'rewards' as Tab, label: '🎁 Нагороди' },
         ]).map(t => (
           <button
-            onClick={() => setGame('hub')}
-            className="w-8 h-8 flex items-center justify-center rounded-xl bg-stone-100 text-stone-600 hover:bg-stone-200 transition-colors text-sm"
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex-1 py-3 text-sm font-bold transition-colors ${
+              tab === t.key ? 'text-coffee-600 border-b-2 border-coffee-500' : 'text-gray-400'
+            }`}
           >
             ←
           </button>
-          <span className="font-semibold text-stone-800">{info.emoji} {info.name}</span>
-        </div>
+        ))}
+      </div>
+
+      {tab === 'game' && (
+        <div className="flex-1 flex flex-col p-3 pb-24 gap-3">
+          {lastResult && lastScore !== null && (
+            <div className={`p-3 rounded-xl text-center text-sm ${
+              lastResult.isNewRecord
+                ? 'bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-200'
+                : 'bg-gray-50 border border-gray-100'
+            }`}>
+              {lastResult.isNewRecord && (
+                <div className="text-amber-600 font-bold text-base mb-1">Новий рекорд 🎉</div>
+              )}
+              <div className="flex justify-center gap-4 text-gray-700">
+                <span>Результат: <b>{lastScore}</b></span>
+                <span>Рекорд: <b>{lastResult.bestScore}</b></span>
+                {lastResult.rank && <span>Місце: <b>#{lastResult.rank}</b></span>}
+              </div>
+              {lastResult.earnedPoints > 0 && (
+                <div className="mt-1 text-coffee-600 font-bold">+{lastResult.earnedPoints} бонусних балів ☕</div>
+              )}
+            </div>
+          )}
 
           <CoffeeJumpGame onGameOver={handleGameOver} />
 
@@ -204,15 +200,56 @@ export default function FunPage() {
             </div>
           </div>
         </div>
+      )}
 
-        {toast && (
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-xl text-sm font-medium whitespace-nowrap z-50">
-            {toast}
+      {tab === 'leaderboard' && (
+        <div className="flex-1 p-4 pb-24">
+          <h2 className="text-lg font-bold text-coffee-800 mb-3">🏆 Лідерборд</h2>
+          {lbLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="skeleton h-12 rounded-xl" />
+              ))}
+            </div>
+          ) : leaderboard.length === 0 ? (
+            <div className="text-center text-gray-400 py-12">
+              <span className="text-4xl block mb-2">🎮</span>
+              Поки що немає результатів
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {leaderboard.map((entry) => (
+                <div
+                  key={entry.userId}
+                  className={`flex items-center gap-3 p-3 rounded-xl border ${
+                    entry.rank <= 3
+                      ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200'
+                      : 'bg-white border-gray-100'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                    entry.rank === 1 ? 'bg-amber-400 text-white' :
+                      entry.rank === 2 ? 'bg-gray-300 text-white' :
+                        entry.rank === 3 ? 'bg-amber-600 text-white' :
+                          'bg-gray-100 text-gray-500'
+                  }`}>
+                    {entry.rank <= 3 ? ['🥇', '🥈', '🥉'][entry.rank - 1] : entry.rank}
+                  </div>
+                  <div className="flex-1">
+                    <span className="font-bold text-gray-800">{entry.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-coffee-600">☕ {entry.score.toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
-    )
-  }
+        </div>
+
+      {tab === 'rewards' && (
+        <div className="flex-1 p-4 pb-24">
+          <h2 className="text-lg font-bold text-coffee-800 mb-3">🎁 Нагороди гри</h2>
 
   // ── Хаб ────────────────────────────────────────────────────────
   return (
@@ -240,84 +277,60 @@ export default function FunPage() {
               <span>зароблено сьогодні</span>
               <span className="text-white font-semibold">{dailyMax - dailyUsed} залишилось</span>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Info banner */}
-      <div className="mx-4 -mt-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-800 flex items-start gap-2">
-        <span className="text-base shrink-0">💡</span>
-        <span>Бали з ігор нараховуються одразу. Ліміт 60 балів на день.</span>
-      </div>
-
-      {/* Games list */}
-      <div className="px-4 mt-5 space-y-3">
-        {GAMES.map(g => {
-          const canPlay = !loadingStatus && status?.canPlay[g.id.toUpperCase()] !== false
-          const isLoading = loadingStatus
-
-          return (
-            <button
-              key={g.id}
-              onClick={() => setGame(g.id)}
-              className="w-full text-left bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md active:scale-[0.98] transition-all duration-150 overflow-hidden"
-            >
-              <div className="flex items-center gap-4 p-4">
-                {/* Icon */}
-                <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-3xl shrink-0 border border-amber-100">
-                  {g.emoji}
+          ) : stats ? (
+            <>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
+                  <div className="text-lg font-bold text-coffee-600">☕ {stats.bestScore}</div>
+                  <div className="text-[10px] text-gray-400">Рекорд</div>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
+                  <div className="text-lg font-bold text-coffee-600">{stats.rank ? `#${stats.rank}` : '—'}</div>
+                  <div className="text-[10px] text-gray-400">Місце</div>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
+                  <div className="text-lg font-bold text-coffee-600">{stats.playsToday}/{stats.playsLimit}</div>
+                  <div className="text-[10px] text-gray-400">Ігор сьогодні</div>
                 </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-stone-800 text-sm">{g.name}</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${g.badgeColor}`}>
-                      {g.badge}
-                    </span>
-                  </div>
-                  <p className="text-xs text-stone-400 mt-0.5">{g.desc}</p>
-                  <p className="text-xs text-amber-700 font-semibold mt-1">⭐ {g.pts}</p>
-                </div>
-
-                {/* Play button */}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-                  isLoading
-                    ? 'bg-stone-100 text-stone-300'
-                    : canPlay
-                    ? 'bg-amber-800 text-white'
-                    : 'bg-stone-100 text-stone-300'
-                }`}>
-                  {isLoading ? '···' : canPlay ? '▶' : '⏸'}
-                </div>
+              <h3 className="font-bold text-gray-700 mb-2 text-sm">Пороги нагород</h3>
+              <div className="space-y-2">
+                {stats.rewards.map((r) => {
+                  const reached = stats.bestScore >= r.score
+                  return (
+                    <div
+                      key={r.score}
+                      className={`flex items-center gap-3 p-3 rounded-xl border ${
+                        r.claimed
+                          ? 'bg-green-50 border-green-200'
+                          : reached
+                            ? 'bg-amber-50 border-amber-200'
+                            : 'bg-gray-50 border-gray-100'
+                      }`}
+                    >
+                      <div className={`text-2xl ${r.claimed ? '' : reached ? 'grayscale-0' : 'grayscale opacity-40'}`}>
+                        {r.claimed ? '✅' : reached ? '🎉' : '🔒'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-bold text-sm text-gray-800">Потрібно очок: {r.score.toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">+{r.points} бонусних балів</div>
+                      </div>
+                      <div className={`text-xs font-bold px-2 py-1 rounded-full ${
+                        r.claimed ? 'bg-green-100 text-green-700' : reached ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {r.claimed ? 'Claimed' : reached ? 'Achieved' : `${stats.bestScore}/${r.score}`}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </>
           ) : (
             <div className="text-center text-gray-400 py-12">
               <span className="text-4xl block mb-2">🎮</span>
-              {tFn('fun.playOnceForStats')}
+              Зіграйте хоча б один раз для статистики
             </div>
           )}
-        </div>
-      )}
-
-              {/* Cooldown bar */}
-              {!isLoading && !canPlay && (
-                <div className="px-4 pb-3">
-                  <div className="text-[10px] text-stone-400 flex items-center gap-1">
-                    <span>⏱</span>
-                    <span>Cooldown активний — спробуй пізніше</span>
-                  </div>
-                </div>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-xl text-sm font-medium whitespace-nowrap z-50">
-          {toast}
         </div>
       )}
     </div>

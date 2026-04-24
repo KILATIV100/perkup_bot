@@ -28,6 +28,19 @@ jobs:
         working-directory: client
         run: npm run build
 
+      - name: Add SPA fallback files
+        working-directory: client/dist
+        run: |
+          cp index.html 404.html
+          cat > .htaccess <<'HTACCESS'
+          RewriteEngine On
+          RewriteBase /
+          RewriteRule ^index\.html$ - [L]
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule . /index.html [L]
+          HTACCESS
+
       - name: Deploy dist to CPanel over FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:

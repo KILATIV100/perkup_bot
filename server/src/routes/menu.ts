@@ -41,7 +41,7 @@ export default async function menuRoutes(app: FastifyInstance) {
       isAdmin = ['ADMIN', 'OWNER'].includes((req as any).user?.role)
     } catch {}
 
-    const cacheKey = `menu:${locationSlug}`;
+    const cacheKey = `menu:${locationSlug}:${isAdmin ? 'admin' : 'public'}`;
 
     // Try cache first
     let products: any[];
