@@ -4,6 +4,8 @@ import crypto from 'crypto'
 import { getLevel, getLevelMultiplier, getNextLevel } from '../lib/loyalty'
 
 const BOT = process.env.BOT_TOKEN || ''
+const REFERRAL_BONUS_FOR_FRIEND = 20
+const REFERRAL_BONUS_FOR_REFERRER = 20
 
 async function tgSend(chatId: string, text: string) {
   if (!BOT) return
@@ -86,6 +88,30 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     return reply.send({
       success: true, points, level, multiplier, nextLevel,
       spinsAvailable, completedOrders, transactions, vouchers,
+    })
+  })
+
+  app.get('/referral', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true },
+    })
+    if (!user) return reply.status(404).send({ success: false, error: 'Not found' })
+
+    const invitedCount = await prisma.user.count({
+      where: { referredById: user.id },
+    })
+
+    const referralCode = `ref_${user.id}`
+    const referralLink = `https://t.me/${process.env.BOT_USERNAME || 'perkupbot'}?start=${referralCode}`
+
+    return reply.send({
+      success: true,
+      referralCode,
+      referralLink,
+      invitedCount,
+      bonusForFriend: REFERRAL_BONUS_FOR_FRIEND,
+      bonusForReferrer: REFERRAL_BONUS_FOR_REFERRER,
     })
   })
 
