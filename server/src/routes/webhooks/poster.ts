@@ -95,7 +95,7 @@ async function awardOfflinePoints(userId: number, totalGrn: number, transactionI
         userId,
         amount: pts,
         type: 'ORDER',
-        description: 'Baly za oflayn zamovlennya v ' + locationName + ' (Poster #' + transactionId + ')',
+        description: '\u0411\u0430\u043b\u0438 \u0437\u0430 \u043e\u0444\u043b\u0430\u0439\u043d \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f: ' + locationName + ' (Poster #' + transactionId + ')',
         idempotencyKey: key,
       },
     })
@@ -205,16 +205,16 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
         const lvlEmoji = EM[lvl] || '\u2615'
 
         const text = [
-          '\ud83e\uddfe *Oflayn zamovlennya*',
+          '\ud83e\uddfe *\u041e\u0444\u043b\u0430\u0439\u043d \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f*',
           SEP,
           '\ud83d\udccd ' + location.name,
           SEP,
-          '\ud83d\udcb3 *Suma: ' + Math.round(totalGrn) + ' hrn*',
+          '\ud83d\udcb3 *\u0421\u0443\u043c\u0430: ' + Math.round(totalGrn) + ' \u0433\u0440\u043d*',
           SEP,
-          lvlEmoji + ' *+' + pts + ' baliv narakhovano*',
-          '   Balans: ' + bal + ' baliv',
+          lvlEmoji + ' *+' + pts + ' \u0431\u0430\u043b\u0456\u0432 \u043d\u0430\u0440\u0430\u0445\u043e\u0432\u0430\u043d\u043e*',
+          '   \u0411\u0430\u043b\u0430\u043d\u0441: ' + bal + ' \u0431\u0430\u043b\u0456\u0432',
           SEP,
-          '_Dyakuyemo! Prykhodite znovu \u2615_',
+          '_\u0414\u044f\u043a\u0443\u0454\u043c\u043e! \u041f\u0440\u0438\u0445\u043e\u0434\u044c\u0442\u0435 \u0437\u043d\u043e\u0432\u0443 \u2615_',
         ].join('\n')
 
         if (userInfo.telegramId) {

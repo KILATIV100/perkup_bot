@@ -719,4 +719,85 @@ export default async function adminRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, sent, total: users.length })
   })
+  // POST /api/admin/manual-award — ручне нарахування балів баристою по телефону
+  app.post('/manual-award', { preHandler: requireStaff }, async (req: any, reply: any) => {
+    const { phone, amount, reason, locationSlug } = req.body as any
+    if (!phone || !amount || amount <= 0) {
+      return reply.status(400).send({ success: false, error: 'Phone and amount required' })
+    }
+
+    const { normalizePhone } = await import('../lib/phone')
+    let normalized: string
+    try { normalized = normalizePhone(String(phone)) }
+    catch { return reply.status(400).send({ success: false, error: 'Invalid phone number' }) }
+
+    const user = await prisma.user.findFirst({ where: { phone: normalized } })
+    if (!user) {
+      return reply.status(404).send({ success: false, error: 'User not found by this phone number' })
+    }
+
+    const pts = Math.round(Number(amount))
+    const desc = reason || ('Manual award by barista' + (locationSlug ? ' at ' + locationSlug : ''))
+    const idempotencyKey = 'manual-' + user.id + '-' + Date.now()
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: user.id }, data: { points: { increment: pts } } }),
+      prisma.pointsTransaction.create({
+        data: { userId: user.id, amount: pts, type: 'ORDER', description: desc, idempotencyKey }
+      }),
+    ])
+
+    const updated = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, firstName: true, lastName: true, points: true, level: true, phone: true }
+    })
+
+    // Telegram сповіщення
+    const BOT = process.env.BOT_TOKEN || ''
+    if (BOT && user.telegramId) {
+      const msg = [
+        '\u2615 *\u0420\u0443\u0447\u043d\u0435 \u043d\u0430\u0440\u0430\u0445\u0443\u0432\u0430\u043d\u043d\u044f*',
+        '*+' + pts + ' \u0431\u0430\u043b\u0456\u0432* \u043d\u0430\u0440\u0430\u0445\u043e\u0432\u0430\u043d\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u043e\u044e',
+        '\u0411\u0430\u043b\u0430\u043d\u0441: ' + (updated?.points || 0) + ' \u0431\u0430\u043b\u0456\u0432',
+        '_' + (desc) + '_',
+      ].join('\n')
+      fetch('https://api.telegram.org/bot' + BOT + '/sendMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: String(user.telegramId), text: msg, parse_mode: 'Markdown' })
+      }).catch(() => {})
+    }
+
+    return reply.send({ success: true, user: updated, pointsAwarded: pts })
+  })
+
+  // GET /api/admin/find-user-by-phone — пошук клієнта по телефону
+  app.get('/find-user-by-phone', { preHandler: requireStaff }, async (req: any, reply: any) => {
+    const phone = (req.query as any)?.phone as string
+    if (!phone) return reply.status(400).send({ success: false, error: 'Phone required' })
+
+    const { normalizePhone } = await import('../lib/phone')
+    let normalized: string
+    try { normalized = normalizePhone(String(phone)) }
+    catch { return reply.status(400).send({ success: false, error: 'Invalid phone' }) }
+
+    const user = await prisma.user.findFirst({
+      where: { phone: normalized },
+      select: {
+        id: true, firstName: true, lastName: true, phone: true,
+        points: true, level: true, monthlyOrders: true,
+        transactions: {
+          where: { type: 'ORDER' },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: { amount: true, description: true, createdAt: true }
+        }
+      }
+    })
+
+    if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+    return reply.send({ success: true, user })
+  })
+
+
 }

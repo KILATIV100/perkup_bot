@@ -89,6 +89,13 @@ export default function ProfilePage() {
             <div className="text-2xl font-bold truncate">{user?.firstName || t('common.guest')}</div>
             <div className="text-sm opacity-90 mt-0.5">{level.label} {t('profile.level')}</div>
             {user?.phone && <div className="text-xs opacity-75 mt-1">📞 {user.phone}</div>}
+      {!user?.phone && (
+        <div className="mt-2">
+          <a href="#/settings" className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full font-medium">
+            ⚠️ Вкажіть телефон для офлайн балів →
+          </a>
+        </div>
+      )}
           </div>
         </div>
 

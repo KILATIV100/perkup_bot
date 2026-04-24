@@ -105,6 +105,9 @@ export const radioApi = {
 }
 
 export const adminApi = {
+  findUserByPhone: (phone: string) => api.get('/api/admin/find-user-by-phone?phone=' + encodeURIComponent(phone)),
+  manualAward: (phone: string, amount: number, reason: string, locationSlug?: string) =>
+    api.post('/api/admin/manual-award', { phone, amount, reason, locationSlug }),
   getDashboard: () => api.get('/api/admin/dashboard'),
   getUsers: (params?: { page?: number; role?: string; search?: string }) => api.get('/api/admin/users', { params }),
   setUserRole: (id: number, role: string) => api.patch(`/api/admin/users/${id}/role`, { role }),
