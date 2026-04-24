@@ -89,12 +89,11 @@ export const aiApi = {
 
 export const gameApi = {
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
-  getLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
+  getCoffeeJumpLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
   getStatus: () => api.get('/api/game/status'),
   finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
-  getLeaderboardPoints: () => api.get('/api/game/leaderboard?type=points'),
-  getLeaderboardGames: () => api.get('/api/game/leaderboard?type=games'),
+  getLeaderboard: (type: 'games'|'orders_week'|'orders_all') => api.get('/api/game/leaderboard?type=' + type),
 }
 
 export const radioApi = {

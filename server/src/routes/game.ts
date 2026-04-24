@@ -283,12 +283,12 @@ export default async function gameRoutes(app: FastifyInstance) {
     })
   })
 
-  // GET /api/game/leaderboard?type=points|games
+  // GET /api/game/leaderboard?type=games|orders_week|orders_all
   app.get('/leaderboard', async (req: any, reply: any) => {
-    const type = (req.query?.type as string) || 'points'
+    const type = (req.query?.type as string) || 'games'
 
     if (type === 'games') {
-      // Топ по зіграних іграх (з pointsTransactions типу GAME)
+      // Топ по зіграних іграх (транзакції типу GAME)
       const top = await prisma.user.findMany({
         where: { isActive: true },
         select: {
@@ -301,32 +301,72 @@ export default async function gameRoutes(app: FastifyInstance) {
       return reply.send({
         success: true,
         type: 'games',
-        leaderboard: top.map((u: any, i: number) => ({
-          rank: i + 1,
-          name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
-          level: u.level,
-          gamesPlayed: u._count.transactions,
-        }))
+        leaderboard: top
+          .filter((u: any) => u._count.transactions > 0)
+          .map((u: any, i: number) => ({
+            rank: i + 1,
+            name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+            level: u.level,
+            value: u._count.transactions,
+            label: 'ігор',
+          }))
       })
     }
 
-    // Топ по балах
-    const top = await prisma.user.findMany({
-      where: { isActive: true, points: { gt: 0 } },
-      select: { id: true, firstName: true, lastName: true, points: true, level: true },
-      orderBy: { points: 'desc' },
-      take: 20,
-    })
-    return reply.send({
-      success: true,
-      type: 'points',
-      leaderboard: top.map((u: any, i: number) => ({
-        rank: i + 1,
-        name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
-        points: u.points,
-        level: u.level,
-      }))
-    })
+    if (type === 'orders_week') {
+      // Топ по замовленням за останні 7 днів
+      const since = new Date(Date.now() - 7 * 24 * 3600 * 1000)
+      const top = await prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, firstName: true, lastName: true, level: true,
+          _count: { select: { orders: { where: { status: 'COMPLETED', createdAt: { gte: since } } } } }
+        },
+        orderBy: { orders: { _count: 'desc' } },
+        take: 20,
+      })
+      return reply.send({
+        success: true,
+        type: 'orders_week',
+        leaderboard: top
+          .filter((u: any) => u._count.orders > 0)
+          .map((u: any, i: number) => ({
+            rank: i + 1,
+            name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+            level: u.level,
+            value: u._count.orders,
+            label: 'зам.',
+          }))
+      })
+    }
+
+    if (type === 'orders_all') {
+      // Топ по всіх замовленнях за весь час
+      const top = await prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, firstName: true, lastName: true, level: true,
+          _count: { select: { orders: { where: { status: 'COMPLETED' } } } }
+        },
+        orderBy: { orders: { _count: 'desc' } },
+        take: 20,
+      })
+      return reply.send({
+        success: true,
+        type: 'orders_all',
+        leaderboard: top
+          .filter((u: any) => u._count.orders > 0)
+          .map((u: any, i: number) => ({
+            rank: i + 1,
+            name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+            level: u.level,
+            value: u._count.orders,
+            label: 'зам. за весь час',
+          }))
+      })
+    }
+
+    return reply.status(400).send({ success: false, error: 'Unknown type' })
   })
 
 
