@@ -1,0 +1,43 @@
+name: Build check (PR guard)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'client/**'
+      - '.github/workflows/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Verify client builds
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: client
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: client
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          test -f client/dist/index.html || (echo "ERROR: index.html missing" && exit 1)
+          test -d client/dist/assets    || (echo "ERROR: assets dir missing" && exit 1)
+          echo "Build OK - $(du -sh client/dist | cut -f1)"
