@@ -5,7 +5,7 @@ import { redis } from '../lib/redis'
 import { prisma } from '../lib/prisma'
 
 const LEADERBOARD_KEY = 'game:coffee-jump:leaderboard'
-const MAX_SCORE = 999999 // анти-чит ліміт
+const MAX_SCORE = 999999
 const DAILY_PLAYS_LIMIT = 50
 const POINTS_THRESHOLDS = [
   { score: 500, points: 5 },
@@ -137,25 +137,20 @@ export default async function gameRoutes(app: FastifyInstance) {
       return reply.status(429).send({ success: false, error: 'Daily play limit reached' })
     }
 
-    // Get user info for leaderboard
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { firstName: true, points: true },
     })
     if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
 
-    // Get previous best
     const prevBest = await redis.zscore(LEADERBOARD_KEY, String(userId))
     const isNewRecord = !prevBest || score > Number(prevBest)
 
     if (isNewRecord) {
-      // Update leaderboard (sorted set)
       await redis.zadd(LEADERBOARD_KEY, score, String(userId))
-      // Store user name mapping
       await redis.hset('game:coffee-jump:names', String(userId), user.firstName || 'Гість')
     }
 
-    // Calculate earned points
     let earnedPoints = 0
     const unlockedThresholds: number[] = []
     for (const t of POINTS_THRESHOLDS) {
@@ -169,7 +164,6 @@ export default async function gameRoutes(app: FastifyInstance) {
       }
     }
 
-    // Award points
     if (earnedPoints > 0) {
       const rewardsKey = unlockedThresholds.sort((a, b) => a - b).join('-')
       const idempotencyKey = `game-coffee-jump-${userId}-${rewardsKey}`
@@ -213,38 +207,118 @@ export default async function gameRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /api/game/leaderboard?type=games|orders_week|orders_all
+  app.get('/leaderboard', async (req: any, reply: any) => {
+    const type = (req.query?.type as string) || 'games'
+
+    if (type === 'games') {
+      // Топ по зіграних іграх (транзакції типу GAME)
+      const top = await prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, firstName: true, lastName: true, level: true,
+          _count: { select: { transactions: { where: { type: 'GAME' } } } }
+        },
+        orderBy: { transactions: { _count: 'desc' } },
+        take: 20,
+      })
+      return reply.send({
+        success: true,
+        type: 'games',
+        leaderboard: top
+          .filter((u: any) => u._count.transactions > 0)
+          .map((u: any, i: number) => ({
+            rank: i + 1,
+            name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+            level: u.level,
+            value: u._count.transactions,
+            label: 'ігор',
+          }))
+      })
+    }
+
+    if (type === 'orders_week') {
+      // Топ по замовленням за останні 7 днів
+      const since = new Date(Date.now() - 7 * 24 * 3600 * 1000)
+      const top = await prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, firstName: true, lastName: true, level: true,
+          _count: { select: { orders: { where: { status: 'COMPLETED', createdAt: { gte: since } } } } }
+        },
+        orderBy: { orders: { _count: 'desc' } },
+        take: 20,
+      })
+      return reply.send({
+        success: true,
+        type: 'orders_week',
+        leaderboard: top
+          .filter((u: any) => u._count.orders > 0)
+          .map((u: any, i: number) => ({
+            rank: i + 1,
+            name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+            level: u.level,
+            value: u._count.orders,
+            label: 'зам.',
+          }))
+      })
+    }
+
+    if (type === 'orders_all') {
+      // Топ по всіх замовленнях за весь час
+      const top = await prisma.user.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, firstName: true, lastName: true, level: true,
+          _count: { select: { orders: { where: { status: 'COMPLETED' } } } }
+        },
+        orderBy: { orders: { _count: 'desc' } },
+        take: 20,
+      })
+      return reply.send({
+        success: true,
+        type: 'orders_all',
+        leaderboard: top
+          .filter((u: any) => u._count.orders > 0)
+          .map((u: any, i: number) => ({
+            rank: i + 1,
+            name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
+            level: u.level,
+            value: u._count.orders,
+            label: 'зам. за весь час',
+          }))
+      })
+    }
+
+    return reply.status(400).send({ success: false, error: 'Unknown type' })
+  })
+
+
   // GET /api/game/coffee-jump/leaderboard
-  app.get('/coffee-jump/leaderboard', async (_req, reply) => {
-    // Top 20 players
+  app.get('/coffee-jump/leaderboard', async (_req: any, reply: any) => {
     const top = await redis.zrevrange(LEADERBOARD_KEY, 0, 19, 'WITHSCORES')
     const entries: { rank: number; userId: number; name: string; score: number }[] = []
-
     for (let i = 0; i < top.length; i += 2) {
       const uId = Number(top[i])
       const sc = Number(top[i + 1])
       const name = await redis.hget('game:coffee-jump:names', String(uId)) || 'Гість'
       entries.push({ rank: entries.length + 1, userId: uId, name, score: sc })
     }
-
     return reply.send({ success: true, leaderboard: entries })
   })
 
   // GET /api/game/coffee-jump/my-stats
-  app.get('/coffee-jump/my-stats', { preHandler: requireAuth }, async (req: any, reply) => {
+  app.get('/coffee-jump/my-stats', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const userId: number = req.user.id
-
     const bestScore = await redis.zscore(LEADERBOARD_KEY, String(userId))
     const rank = await redis.zrevrank(LEADERBOARD_KEY, String(userId))
     const dayKey = getKyivDayKey()
     const playsToday = Number(await redis.get(`game:plays:${userId}:${dayKey}`)) || 0
-
-    // Check which point thresholds are unlocked
     const unlockedRewards: { score: number; points: number; claimed: boolean }[] = []
     for (const t of POINTS_THRESHOLDS) {
       const claimed = !!(await redis.get(`game:points:${userId}:${t.score}`))
       unlockedRewards.push({ ...t, claimed })
     }
-
     return reply.send({
       success: true,
       bestScore: bestScore ? Number(bestScore) : 0,

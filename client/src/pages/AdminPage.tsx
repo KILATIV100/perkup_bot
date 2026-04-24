@@ -798,8 +798,177 @@ function MenuTab() {
   )
 }
 
-// ─── VOUCHERS (barista/admin) ────────────────────────────────────
+// ─── VOUCHERS + MANUAL AWARD (barista/admin) ────────────────────
 function VouchersTab() {
+  const [tab, setTab] = useState<'voucher'|'phone'>('phone')
+
+  return (
+    <div className="space-y-4">
+      {/* Tab switcher */}
+      <div className="flex bg-stone-100 rounded-2xl p-1 gap-1">
+        {([['phone','📱 Нарахувати бали'],['voucher','🎟️ Ваучер']] as [string,string][]).map(([t,label]) => (
+          <button key={t} onClick={() => setTab(t as any)}
+            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${tab===t?'bg-amber-800 text-white shadow':'text-stone-500'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'phone' && <PhoneAwardTab />}
+      {tab === 'voucher' && <VoucherRedeemTab />}
+    </div>
+  )
+}
+
+function PhoneAwardTab() {
+  const [phone, setPhone] = useState('')
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [foundUser, setFoundUser] = useState<any>(null)
+  const [searching, setSearching] = useState(false)
+  const [awarding, setAwarding] = useState(false)
+  const [msg, setMsg] = useState<{text:string;ok:boolean}|null>(null)
+  const [error, setError] = useState('')
+
+  const search = async () => {
+    const p = phone.trim()
+    if (!p) return
+    setSearching(true); setFoundUser(null); setError(''); setMsg(null)
+    try {
+      const res = await adminApi.findUserByPhone(p)
+      setFoundUser(res.data.user)
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Клієнта не знайдено')
+    }
+    setSearching(false)
+  }
+
+  const award = async () => {
+    if (!foundUser || !amount) return
+    setAwarding(true); setMsg(null)
+    try {
+      const pts = Number(amount)
+      await adminApi.manualAward(foundUser.phone, pts, reason || 'Ручне нарахування баристою')
+      setMsg({ text: '+' + pts + ' балів нараховано ' + foundUser.firstName + '!', ok: true })
+      setFoundUser(null); setPhone(''); setAmount(''); setReason('')
+    } catch (e: any) {
+      setMsg({ text: e.response?.data?.error || 'Помилка', ok: false })
+    }
+    setAwarding(false)
+  }
+
+  const LEVEL_COLOR: Record<string,string> = {
+    Bronze: 'text-amber-700 bg-amber-100',
+    Silver: 'text-slate-600 bg-slate-100',
+    Gold: 'text-yellow-700 bg-yellow-100',
+    Platinum: 'text-violet-700 bg-violet-100',
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Пошук по телефону */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+        <h3 className="font-semibold text-gray-700">📱 Пошук клієнта за телефоном</h3>
+
+        <div className="flex gap-2">
+          <input
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && search()}
+            type="tel"
+            placeholder="+380501234567"
+            inputMode="tel"
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white text-gray-800"
+          />
+          <button onClick={search} disabled={searching || !phone.trim()}
+            className="px-4 py-2.5 rounded-xl bg-amber-800 text-white text-sm font-semibold disabled:opacity-50">
+            {searching ? '⏳' : '🔍'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">❌ {error}</div>
+        )}
+      </div>
+
+      {/* Знайдений клієнт */}
+      {foundUser && (
+        <div className="bg-white rounded-2xl border border-amber-200 p-4 shadow-sm space-y-3">
+          {/* Інфо клієнта */}
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-800 font-bold text-lg">
+              {foundUser.firstName?.charAt(0)?.toUpperCase()}
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-gray-800">{foundUser.firstName} {foundUser.lastName || ''}</p>
+              <p className="text-xs text-gray-500">{foundUser.phone}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LEVEL_COLOR[foundUser.level]||''}`}>
+                  {foundUser.level}
+                </span>
+                <span className="text-xs text-gray-600">⭐ {foundUser.points} балів</span>
+                <span className="text-xs text-gray-400">📦 {foundUser.monthlyOrders} замовлень</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Остання активність */}
+          {foundUser.transactions?.length > 0 && (
+            <div className="rounded-xl bg-stone-50 p-3 space-y-1">
+              <p className="text-xs font-medium text-stone-500 mb-2">Останні транзакції:</p>
+              {foundUser.transactions.slice(0,3).map((tx: any, i: number) => (
+                <div key={i} className="flex justify-between text-xs text-stone-600">
+                  <span className="truncate max-w-[200px]">{tx.description}</span>
+                  <span className="font-medium text-green-700 ml-2 shrink-0">+{tx.amount}б</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Нарахування балів */}
+          <div className="border-t border-gray-100 pt-3 space-y-2">
+            <p className="text-sm font-medium text-gray-700">Нарахувати бали</p>
+            <div className="flex gap-2">
+              {[10,20,30,50].map(n => (
+                <button key={n} onClick={() => setAmount(String(n))}
+                  className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-all ${
+                    amount===String(n) ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-stone-200 text-stone-600'
+                  }`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g,''))}
+              placeholder="Або введи кількість балів"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
+            <input value={reason} onChange={e => setReason(e.target.value)}
+              placeholder="Причина (необов'язково)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-600" />
+            <button onClick={award} disabled={awarding || !amount}
+              className="w-full py-3 rounded-xl bg-green-600 text-white font-bold text-sm active:scale-95 transition-transform disabled:opacity-50">
+              {awarding ? 'Нараховуємо...' : `✅ Нарахувати ${amount||'?'} балів → ${foundUser.firstName}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <div className={`rounded-xl p-3 text-sm font-medium ${msg.ok?'bg-green-50 border border-green-200 text-green-700':'bg-red-50 border border-red-200 text-red-700'}`}>
+          {msg.ok ? '✅' : '❌'} {msg.text}
+        </div>
+      )}
+
+      {/* Підказка */}
+      <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-xs text-amber-800 space-y-1">
+        <p className="font-medium">Коли нараховувати вручну?</p>
+        <p>• Клієнт не зареєстрований в Poster</p>
+        <p>• Poster не знайшов телефон автоматично</p>
+        <p>• Технічна проблема з webhook</p>
+      </div>
+    </div>
+  )
+}
+
+function VoucherRedeemTab() {
   const [code, setCode] = useState('')
   const [voucher, setVoucher] = useState<any>(null)
   const [error, setError] = useState('')
@@ -810,10 +979,7 @@ function VouchersTab() {
   const lookup = async () => {
     const trimmed = code.trim().toUpperCase()
     if (!trimmed) return
-    setLoading(true)
-    setError('')
-    setSuccess('')
-    setVoucher(null)
+    setLoading(true); setError(''); setSuccess(''); setVoucher(null)
     try {
       const res = await loyaltyApi.lookupVoucher(trimmed)
       setVoucher(res.data.voucher)
@@ -828,14 +994,11 @@ function VouchersTab() {
   const redeem = async () => {
     const trimmed = code.trim().toUpperCase()
     if (!trimmed) return
-    setRedeeming(true)
-    setError('')
-    setSuccess('')
+    setRedeeming(true); setError(''); setSuccess('')
     try {
       const res = await loyaltyApi.redeemVoucher(trimmed)
       setSuccess(res.data.message || 'Ваучер списано!')
-      setVoucher(null)
-      setCode('')
+      setVoucher(null); setCode('')
     } catch (e: any) {
       setError(e.response?.data?.error || 'Помилка списання')
     }
@@ -847,89 +1010,56 @@ function VouchersTab() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
-        <h3 className="font-semibold text-gray-700">🎟️ Списання ваучера</h3>
-        <p className="text-xs text-gray-400">Введіть код ваучера клієнта для перевірки та списання</p>
-
-        <div className="flex gap-2">
-          <input
-            value={code}
-            onChange={e => setCode(e.target.value.toUpperCase())}
-            placeholder="Код ваучера (напр. A1B2C3)"
-            maxLength={10}
-            className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-widest text-center uppercase bg-white text-gray-800"
-            onKeyDown={e => e.key === 'Enter' && lookup()}
-          />
-          <button
-            onClick={lookup}
-            disabled={loading || !code.trim()}
-            className="px-4 py-2.5 rounded-xl bg-coffee-600 text-white text-sm font-semibold disabled:opacity-50 active:scale-95 transition-transform"
-          >
-            {loading ? '...' : '🔍'}
-          </button>
-        </div>
-
-        {error && (
-          <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-            ❌ {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-700">
-            ✅ {success}
-          </div>
-        )}
-
-        {voucher && (
-          <div className="rounded-2xl bg-gradient-to-br from-coffee-50 to-amber-50 border border-coffee-200 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-2xl">{PRIZE_EMOJI[voucher.prizeType] || '🎫'}</span>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                voucher.isUsed ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-              }`}>
-                {voucher.isUsed ? 'Використано' : 'Активний'}
-              </span>
-            </div>
-
-            <div>
-              <div className="text-lg font-bold text-gray-800">{voucher.prizeLabel}</div>
-              <div className="text-xs text-gray-500 font-mono mt-0.5">Код: {voucher.code}</div>
-            </div>
-
-            {voucher.user && (
-              <div className="rounded-xl bg-white/60 p-3 space-y-1 text-sm">
-                <div className="text-gray-700">
-                  👤 {voucher.user.firstName} {voucher.user.lastName || ''}
-                </div>
-                {voucher.user.phone && (
-                  <div className="text-gray-500 text-xs">📱 {voucher.user.phone}</div>
-                )}
-                <div className="text-gray-500 text-xs">⭐ {voucher.user.points} балів</div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>Створено: {new Date(voucher.createdAt).toLocaleString('uk')}</span>
-              <span>До: {new Date(voucher.expiresAt).toLocaleDateString('uk')}</span>
-            </div>
-
-            {!voucher.isUsed && voucher.expiresAt > new Date().toISOString() && (
-              <button
-                onClick={redeem}
-                disabled={redeeming}
-                className="w-full py-3 rounded-xl bg-green-600 text-white font-bold text-sm active:scale-95 transition-transform disabled:opacity-50"
-              >
-                {redeeming ? 'Списуємо...' : '✅ Списати ваучер'}
-              </button>
-            )}
-          </div>
-        )}
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+      <h3 className="font-semibold text-gray-700">🎟️ Списання ваучера</h3>
+      <p className="text-xs text-gray-400">Введіть код ваучера клієнта</p>
+      <div className="flex gap-2">
+        <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
+          placeholder="Код ваучера (напр. A1B2C3)" maxLength={10}
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-widest text-center uppercase bg-white text-gray-800"
+          onKeyDown={e => e.key === 'Enter' && lookup()} />
+        <button onClick={lookup} disabled={loading || !code.trim()}
+          className="px-4 py-2.5 rounded-xl bg-amber-800 text-white text-sm font-semibold disabled:opacity-50">
+          {loading ? '...' : '🔍'}
+        </button>
       </div>
+      {error && <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">❌ {error}</div>}
+      {success && <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-700">✅ {success}</div>}
+      {voucher && (
+        <div className="rounded-2xl bg-gradient-to-br from-coffee-50 to-amber-50 border border-coffee-200 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-2xl">{PRIZE_EMOJI[voucher.prizeType] || '🎫'}</span>
+            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${voucher.isUsed?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>
+              {voucher.isUsed ? 'Використано' : 'Активний'}
+            </span>
+          </div>
+          <div>
+            <div className="text-lg font-bold text-gray-800">{voucher.prizeLabel}</div>
+            <div className="text-xs text-gray-500 font-mono mt-0.5">Код: {voucher.code}</div>
+          </div>
+          {voucher.user && (
+            <div className="rounded-xl bg-white/60 p-3 space-y-1 text-sm">
+              <div className="text-gray-700">👤 {voucher.user.firstName} {voucher.user.lastName || ''}</div>
+              {voucher.user.phone && <div className="text-gray-500 text-xs">📱 {voucher.user.phone}</div>}
+              <div className="text-gray-500 text-xs">⭐ {voucher.user.points} балів</div>
+            </div>
+          )}
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>Створено: {new Date(voucher.createdAt).toLocaleString('uk')}</span>
+            <span>До: {new Date(voucher.expiresAt).toLocaleDateString('uk')}</span>
+          </div>
+          {!voucher.isUsed && voucher.expiresAt > new Date().toISOString() && (
+            <button onClick={redeem} disabled={redeeming}
+              className="w-full py-3 rounded-xl bg-green-600 text-white font-bold text-sm active:scale-95 transition-transform disabled:opacity-50">
+              {redeeming ? 'Списуємо...' : '✅ Списати ваучер'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
+
 
 // ─── LOCATIONS ──────────────────────────────────────────────────
 function LocationsTab() {
