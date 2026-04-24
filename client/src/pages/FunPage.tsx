@@ -71,6 +71,7 @@ export default function FunPage() {
   const dailyUsed = status?.daily?.current ?? 0
   const dailyMax  = status?.daily?.max ?? 60
   const progress  = Math.min(100, Math.round((dailyUsed / dailyMax) * 100))
+  const hasValidStatus = !!status && Number.isFinite(dailyUsed) && Number.isFinite(dailyMax) && dailyMax > 0
 
   if (game !== 'hub') {
     const info = GAMES.find(g => g.id === game)!
@@ -116,9 +117,15 @@ export default function FunPage() {
         <span>Бали нараховуються одразу. Ліміт 60 балів на день.</span>
       </div>
 
+      {(loadingStatus || !hasValidStatus) && (
+        <div className="mx-4 mt-4 bg-white border border-stone-200 rounded-2xl px-4 py-3 text-sm text-stone-600">
+          {loadingStatus ? 'Завантажуємо ігровий статус…' : 'Тимчасово не вдалось отримати статус ігор. Спробуй ще раз.'}
+        </div>
+      )}
+
       <div className="px-4 mt-5 space-y-3">
         {GAMES.map(g => {
-          const canPlay = !loadingStatus && status?.canPlay?.[g.id.toUpperCase()] !== false
+          const canPlay = hasValidStatus && !loadingStatus && status?.canPlay?.[g.id.toUpperCase()] !== false
           return (
             <button key={g.id} onClick={() => setGame(g.id)}
               className="w-full text-left bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md active:scale-[0.98] transition-all overflow-hidden">
