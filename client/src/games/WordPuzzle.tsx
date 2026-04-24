@@ -80,7 +80,7 @@ export default function WordPuzzle({ onFinish }: Props) {
   const finish = useCallback(async (foundWords: string[]) => {
     setLoading(true)
     try {
-      const res = await gameApi.finishGame('WORD_PUZZLE', foundWords.length)
+      const res = await gameApi.finish('WORD_PUZZLE', foundWords.length)
       const earned = res.data?.pointsWon || res.data?.earnedPoints || 0
       setPts(earned); onFinish(earned)
     } catch { onFinish(0) }
