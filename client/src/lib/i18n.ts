@@ -119,6 +119,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'order.status.COMPLETED': { uk: '✅ Завершено', en: '✅ Completed' },
   'order.status.CANCELLED': { uk: '❌ Скасовано', en: '❌ Cancelled' },
   'order.status.UNASSIGNED': { uk: '📋 Без зміни', en: '📋 Unassigned' },
+  'order.repeat': { uk: 'Повторити замовлення ☕', en: 'Repeat order ☕' },
 
   // ─── Profile ───
   'profile.level': { uk: 'рівень', en: 'level' },

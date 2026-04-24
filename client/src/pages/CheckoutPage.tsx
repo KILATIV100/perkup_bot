@@ -49,7 +49,13 @@ export default function CheckoutPage() {
       clearCart()
       navigate(`/orders/${res.data.orderId}`)
     } catch (e: any) {
-      setError(e?.response?.data?.error || t('common.error'))
+      const apiError = e?.response?.data?.error
+      const apiMessage = e?.response?.data?.message
+      if (apiError === 'CASH_PAYMENT_BLOCKED') {
+        setError(apiMessage || 'Передзамовлення з оплатою на касі тимчасово обмежено. Зверніться до бариста або адміністратора.')
+      } else {
+        setError(apiError || t('common.error'))
+      }
     } finally {
       setLoading(false)
     }
