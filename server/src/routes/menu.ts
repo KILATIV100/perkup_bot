@@ -7,6 +7,14 @@ import { buildMenuQrSvg, buildPrintableMenuHtml, groupProductsByCategory, sortMe
 
 const MENU_CACHE_TTL = 1800; // 30 хвилин
 
+function getPrimaryBadge(product: any): 'NEW' | 'TOP' | 'SEASONAL' | 'RECOMMENDED' | null {
+  if (product.isNew) return 'NEW'
+  if (product.isTop) return 'TOP'
+  if (product.isSeasonal) return 'SEASONAL'
+  if (product.isRecommended) return 'RECOMMENDED'
+  return null
+}
+
 function getBaseUrl(req: any) {
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
   const protocol = forwardedProto || req.protocol || 'https'
@@ -75,10 +83,16 @@ export default async function menuRoutes(app: FastifyInstance) {
       await redis.set(cacheKey, JSON.stringify({ products, bundles }), 'EX', MENU_CACHE_TTL);
     }
 
-    products = products.map((p: any) => ({
-      ...p,
-      displayImageUrl: p.imageUrl || p.posterImageUrl || null,
-    }))
+    products = products.map((p: any) => {
+      const resolvedImageUrl = p.imageUrl || p.posterImageUrl || null
+      return {
+        ...p,
+        displayImageUrl: resolvedImageUrl,
+        resolvedImageUrl,
+        hasImage: Boolean(resolvedImageUrl),
+        primaryBadge: getPrimaryBadge(p),
+      }
+    })
 
     // Apply filters
     let filtered = sortMenuProducts(products);

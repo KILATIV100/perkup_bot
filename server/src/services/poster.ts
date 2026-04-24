@@ -144,9 +144,15 @@ export async function syncPosterMenu(locationSlug: string): Promise<{ synced: nu
       })
 
       if (existing) {
+        const updateData: any = { name, price, category, isAvailable }
+        if (posterImageUrl) updateData.posterImageUrl = posterImageUrl
+        if ((!existing.description || !String(existing.description).trim()) && description) {
+          updateData.description = description
+        }
+
         await prisma.product.update({
           where: { id: existing.id },
-          data: { name, price, category, posterImageUrl, isAvailable },
+          data: updateData,
         })
       } else {
         await prisma.product.create({

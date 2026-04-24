@@ -59,7 +59,12 @@ export const ordersApi = {
   pay: (id: number, paymentId: string) => api.post(`/api/orders/${id}/pay`, { paymentId }),
   getMyOrders: (page = 1) => api.get('/api/orders', { params: { page } }),
   getById: (id: number) => api.get(`/api/orders/${id}`),
+  addTip: (id: number, amount: number) => api.post(`/api/orders/${id}/tip`, { amount }),
   cancel: (id: number) => api.delete(`/api/orders/${id}`),
+}
+
+export const promosApi = {
+  validate: (data: { code: string; locationId: number; subtotal: number }) => api.post('/api/orders/promo/validate', data),
 }
 
 export const loyaltyApi = {
@@ -77,6 +82,12 @@ export const loyaltyApi = {
 
 export const mediaUrl = (fileId: string) => `${BASE_URL}/api/media/${fileId}`
 
+export const shiftsApi = {
+  getActive: () => api.get('/api/shifts/active'),
+  getHistory: (params?: { page?: number; locationId?: number }) => api.get('/api/shifts/history', { params }),
+  getAnalytics: (params?: { days?: number }) => api.get('/api/shifts/analytics', { params }),
+}
+
 export const aiApi = {
   weatherMenu: (locationSlug?: string) => api.get('/api/ai/weather-menu', { params: { locationSlug } }),
   cardOfDay: () => api.get('/api/ai/card-of-day'),
@@ -87,9 +98,24 @@ export const aiApi = {
   claimChallenge: () => api.post('/api/ai/daily-challenge/claim'),
 }
 
+type GameFinishType =
+  | 'TIC_TAC_TOE'
+  | 'MEMORY'
+  | 'QUIZ'
+  | 'WORD_PUZZLE'
+  | 'PERKIE_CATCH'
+  | 'BARISTA_RUSH'
+  | 'MEMORY_COFFEE'
+  | 'PERKIE_JUMP'
+
 export const gameApi = {
   getStatus: () => api.get('/api/game/status'),
-  finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
+  finish: (typeOrData: GameFinishType | { type: GameFinishType; score: number }, score?: number) => {
+    if (typeof typeOrData === 'string') {
+      return api.post('/api/game/finish', { type: typeOrData, score: score ?? 0 })
+    }
+    return api.post('/api/game/finish', typeOrData)
+  },
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
   getCoffeeJumpLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
@@ -133,6 +159,8 @@ export const adminApi = {
   awardByCheck: (phone: string, checkAmount: number) =>
     api.post('/api/admin/manual-award', { phone, checkAmount, reason: '\u041e\u0444\u043b\u0430\u0439\u043d \u0447\u0435\u043a (\u0431\u0430\u0440\u0438\u0441\u0442\u0430)' }),
   getDashboard: () => api.get('/api/admin/dashboard'),
+  getReviews: (params?: { page?: number; rating?: number; locationId?: number }) => api.get('/api/admin/reviews', { params }),
+  getBasicAnalytics: (params?: { days?: number }) => api.get('/api/admin/analytics/basic', { params }),
   getUsers: (params?: { page?: number; role?: string; search?: string }) => api.get('/api/admin/users', { params }),
   setUserRole: (id: number, role: string) => api.patch(`/api/admin/users/${id}/role`, { role }),
   getOrders: (params?: { page?: number; status?: string; locationId?: number }) => api.get('/api/admin/orders', { params }),

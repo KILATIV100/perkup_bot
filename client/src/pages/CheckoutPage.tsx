@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authApi, ordersApi } from '../lib/api'
+import { authApi, ordersApi, promosApi } from '../lib/api'
 import { useCartStore } from '../stores/cart'
 import { useLocationStore } from '../stores/location'
 import { useAuthStore } from '../stores/auth'
 import { useT } from '../lib/i18n'
+import { FEATURES } from '../lib/features'
 
 const PHONE_STORAGE_KEY = 'perkup_customer_phone'
 
@@ -15,9 +16,35 @@ export default function CheckoutPage() {
   const { items, clearCart } = useCartStore()
   const [customerPhone, setCustomerPhone] = useState(() => user?.phone || localStorage.getItem(PHONE_STORAGE_KEY) || '')
   const [comment, setComment] = useState('')
+  const [promoCode, setPromoCode] = useState('')
+  const [promoDiscount, setPromoDiscount] = useState<number | null>(null)
+  const [promoError, setPromoError] = useState('')
+  const [promoLoading, setPromoLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const t = useT()
+  const subtotal = Math.round(items.reduce((sum, i) => sum + i.price * i.quantity, 0))
+
+  const applyPromo = async () => {
+    if (!FEATURES.PROMOS) return
+    if (!activeLocation) return setPromoError(t('checkout.selectLocation'))
+    if (!promoCode.trim()) return setPromoError(t('checkout.promoRequired'))
+    setPromoLoading(true)
+    setPromoError('')
+    try {
+      const res = await promosApi.validate({
+        code: promoCode.trim(),
+        locationId: activeLocation.id,
+        subtotal,
+      })
+      setPromoDiscount(Number(res.data?.promo?.discount || 0))
+    } catch (e: any) {
+      setPromoDiscount(null)
+      setPromoError(e?.response?.data?.error || t('common.error'))
+    } finally {
+      setPromoLoading(false)
+    }
+  }
 
   const submit = async () => {
     if (!activeLocation) return setError(t('checkout.selectLocation'))
@@ -36,6 +63,7 @@ export default function CheckoutPage() {
         locationId: activeLocation.id,
         customerPhone: customerPhone.trim() || undefined,
         comment: comment || undefined,
+        promoCode: FEATURES.PROMOS && promoCode.trim() ? promoCode.trim() : undefined,
         items: items.map((i) => ({ productId: i.productId, bundleId: i.bundleId, quantity: i.quantity, modifiers: i.modifiers })),
       })
 
@@ -49,7 +77,13 @@ export default function CheckoutPage() {
       clearCart()
       navigate(`/orders/${res.data.orderId}`)
     } catch (e: any) {
-      setError(e?.response?.data?.error || t('common.error'))
+      const apiError = e?.response?.data?.error
+      const apiMessage = e?.response?.data?.message
+      if (apiError === 'CASH_PAYMENT_BLOCKED') {
+        setError(apiMessage || 'Передзамовлення з оплатою на касі тимчасово обмежено. Зверніться до бариста або адміністратора.')
+      } else {
+        setError(apiError || t('common.error'))
+      }
     } finally {
       setLoading(false)
     }
@@ -77,6 +111,38 @@ export default function CheckoutPage() {
         <label className="text-sm font-medium">{t('checkout.comment')}</label>
         <textarea value={comment} onChange={(e) => setComment(e.target.value)} className="mt-1 w-full border rounded-xl px-3 py-2 bg-white text-gray-900" rows={3} placeholder={t('checkout.commentPlaceholder')} />
       </div>
+
+      {FEATURES.PROMOS && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t('checkout.promoLabel')}</label>
+          <div className="flex gap-2">
+            <input
+              value={promoCode}
+              onChange={(e) => {
+                setPromoCode(e.target.value.toUpperCase())
+                setPromoDiscount(null)
+                setPromoError('')
+              }}
+              className="flex-1 border rounded-xl px-3 py-2 bg-white text-gray-900"
+              placeholder={t('checkout.promoPlaceholder')}
+            />
+            <button
+              type="button"
+              onClick={applyPromo}
+              disabled={promoLoading || !promoCode.trim()}
+              className="px-4 py-2 rounded-xl border border-coffee-300 text-coffee-700 font-medium disabled:opacity-50"
+            >
+              {promoLoading ? t('checkout.promoApplying') : t('checkout.promoApply')}
+            </button>
+          </div>
+          {promoDiscount !== null && (
+            <div className="text-sm text-green-700">
+              {t('checkout.promoApplied')}: -{promoDiscount} {t('common.currency')}
+            </div>
+          )}
+          {promoError && <div className="text-xs text-red-600">{promoError}</div>}
+        </div>
+      )}
 
       <div>
         <label className="text-sm font-medium">{t('checkout.payment')}</label>

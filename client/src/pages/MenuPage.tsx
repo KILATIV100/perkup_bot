@@ -13,6 +13,11 @@ type MenuProduct = {
   description?: string
   price: number
   category: string
+  imageUrl?: string | null
+  posterImageUrl?: string | null
+  displayImageUrl?: string | null
+  resolvedImageUrl?: string | null
+  hasImage?: boolean
 }
 
 type MenuCategory = {
@@ -25,6 +30,7 @@ export default function MenuPage() {
   const { activeLocation } = useLocationStore()
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [brokenImages, setBrokenImages] = useState<Record<number, boolean>>({})
   const { addItem, getTotalItems, clearIfDifferentLocation } = useCartStore()
   const totalItems = getTotalItems()
   const { isAuthenticated } = useAuthStore()
@@ -121,9 +127,24 @@ export default function MenuPage() {
           {section.products.map((p) => (
             <article key={p.id} className="bg-white rounded-2xl border border-gray-100 p-3 shadow-sm">
               <div className="flex justify-between gap-3">
-                <div>
+                <div className="flex gap-3 min-w-0">
+                  {!brokenImages[p.id] && p.resolvedImageUrl ? (
+                    <img
+                      src={p.resolvedImageUrl}
+                      alt={p.name}
+                      loading="lazy"
+                      className="w-16 h-16 rounded-xl object-cover bg-gray-100 shrink-0"
+                      onError={() => setBrokenImages((prev) => ({ ...prev, [p.id]: true }))}
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-gray-100 text-gray-400 text-xs flex items-center justify-center shrink-0">
+                      ☕
+                    </div>
+                  )}
+                  <div className="min-w-0">
                   <div className="font-semibold text-gray-900">{p.name}</div>
-                  {p.description && <div className="text-sm text-gray-500 mt-1">{p.description}</div>}
+                  {p.description?.trim() && <div className="text-sm text-gray-500 mt-1">{p.description}</div>}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-coffee-700 whitespace-nowrap">{Number(p.price).toFixed(0)} {t('common.currency')}</div>

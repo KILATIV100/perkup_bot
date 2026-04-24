@@ -103,6 +103,12 @@ const translations: Record<string, Record<Lang, string>> = {
   'checkout.selectLocation': { uk: 'Оберіть локацію', en: 'Select a location' },
   'checkout.emptyCart': { uk: 'Кошик порожній', en: 'Cart is empty' },
   'checkout.phoneRequired': { uk: 'Вкажи номер телефону для передзамовлення', en: 'Enter phone number for preorder' },
+  'checkout.promoLabel': { uk: 'Промокод', en: 'Promo code' },
+  'checkout.promoPlaceholder': { uk: 'Введіть промокод', en: 'Enter promo code' },
+  'checkout.promoApply': { uk: 'Застосувати', en: 'Apply' },
+  'checkout.promoApplying': { uk: 'Перевіряємо...', en: 'Checking...' },
+  'checkout.promoApplied': { uk: 'Промокод застосовано', en: 'Promo applied' },
+  'checkout.promoRequired': { uk: 'Введіть промокод', en: 'Enter promo code' },
 
   // ─── Orders ───
   'order.title': { uk: 'Замовлення', en: 'Order' },
@@ -119,6 +125,12 @@ const translations: Record<string, Record<Lang, string>> = {
   'order.status.COMPLETED': { uk: '✅ Завершено', en: '✅ Completed' },
   'order.status.CANCELLED': { uk: '❌ Скасовано', en: '❌ Cancelled' },
   'order.status.UNASSIGNED': { uk: '📋 Без зміни', en: '📋 Unassigned' },
+  'order.repeat': { uk: 'Повторити замовлення ☕', en: 'Repeat order ☕' },
+  'order.tip.title': { uk: 'Чайові бариста', en: 'Tip the barista' },
+  'order.tip.subtitle': { uk: 'Без онлайн-оплати: передайте чайові бариста на касі.', en: 'No online payment: give the tip to the barista at checkout.' },
+  'order.tip.add': { uk: 'Додати чайові', en: 'Add tip' },
+  'order.tip.sending': { uk: 'Зберігаємо...', en: 'Saving...' },
+  'order.tip.added': { uk: '✅ Чайові додано', en: '✅ Tip added' },
 
   // ─── Profile ───
   'profile.level': { uk: 'рівень', en: 'level' },

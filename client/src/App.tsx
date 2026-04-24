@@ -23,6 +23,7 @@ import CommunityEventDetailsPage from './pages/community/CommunityEventDetailsPa
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
+import { GamesRouteDebug } from './components/GamesRouteBoundary'
 
 export default function App() {
   const { login, isAuthenticated, isLoading, user } = useAuthStore()
@@ -47,7 +48,14 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/menu" replace />} />
           <Route path="/menu" element={<MenuPage />} />
-          <Route path="/fun" element={<FunPage />} />
+          <Route
+            path="/fun"
+            element={(
+              <GamesRouteDebug user={user} status={{ isAuthenticated, isLoading }}>
+                <FunPage />
+              </GamesRouteDebug>
+            )}
+          />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/barista" element={<BaristaPage />} />
           <Route path="/radio" element={<Navigate to="/fun" replace />} />

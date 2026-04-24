@@ -49,4 +49,91 @@ export default async function shiftsRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true, shift })
   })
+
+  app.get('/history', { preHandler: requireBarista }, async (req, reply) => {
+    const query = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      locationId: z.coerce.number().int().positive().optional(),
+    }).safeParse(req.query)
+
+    const page = query.success ? query.data.page : 1
+    const take = 20
+    const skip = (page - 1) * take
+    const where: any = { userId: req.user.id, endedAt: { not: null } }
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const [shifts, total] = await Promise.all([
+      prisma.shift.findMany({
+        where,
+        include: { location: { select: { id: true, name: true, slug: true } } },
+        orderBy: { startedAt: 'desc' },
+        take,
+        skip,
+      }),
+      prisma.shift.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      shifts,
+      total,
+      pages: Math.ceil(total / take),
+    })
+  })
+
+  app.get('/analytics', { preHandler: requireBarista }, async (req, reply) => {
+    const query = z.object({
+      days: z.coerce.number().int().min(1).max(90).default(30),
+    }).safeParse(req.query)
+    const days = query.success ? query.data.days : 30
+    const since = new Date(Date.now() - days * 86400000)
+    const where = { userId: req.user.id, startedAt: { gte: since } }
+    const shifts = await prisma.shift.findMany({ where, select: { id: true } })
+    const shiftIds = shifts.map((s) => s.id)
+
+    if (shiftIds.length === 0) {
+      return reply.send({
+        success: true,
+        analytics: {
+          periodDays: days,
+          shiftsCount: 0,
+          completedOrders: 0,
+          revenue: 0,
+          avgRating: 0,
+          reviewsCount: 0,
+          tipsTotal: 0,
+        },
+      })
+    }
+
+    const [ordersAgg, reviewAgg, tipsAgg] = await Promise.all([
+      prisma.order.aggregate({
+        where: { shiftId: { in: shiftIds }, status: 'COMPLETED', createdAt: { gte: since } },
+        _count: { id: true },
+        _sum: { total: true },
+      }),
+      prisma.review.aggregate({
+        where: { shiftId: { in: shiftIds }, createdAt: { gte: since } },
+        _avg: { rating: true },
+        _count: true,
+      }),
+      prisma.tip.aggregate({
+        where: { shiftId: { in: shiftIds }, createdAt: { gte: since } },
+        _sum: { amount: true },
+      }),
+    ])
+
+    return reply.send({
+      success: true,
+      analytics: {
+        periodDays: days,
+        shiftsCount: shifts.length,
+        completedOrders: ordersAgg._count.id || 0,
+        revenue: Number(ordersAgg._sum.total || 0),
+        avgRating: Number(reviewAgg._avg.rating || 0),
+        reviewsCount: reviewAgg._count || 0,
+        tipsTotal: Number(tipsAgg._sum.amount || 0),
+      },
+    })
+  })
 }
