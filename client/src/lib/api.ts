@@ -87,9 +87,24 @@ export const aiApi = {
   claimChallenge: () => api.post('/api/ai/daily-challenge/claim'),
 }
 
+type GameFinishType =
+  | 'TIC_TAC_TOE'
+  | 'MEMORY'
+  | 'QUIZ'
+  | 'WORD_PUZZLE'
+  | 'PERKIE_CATCH'
+  | 'BARISTA_RUSH'
+  | 'MEMORY_COFFEE'
+  | 'PERKIE_JUMP'
+
 export const gameApi = {
   getStatus: () => api.get('/api/game/status'),
-  finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
+  finish: (typeOrData: GameFinishType | { type: GameFinishType; score: number }, score?: number) => {
+    if (typeof typeOrData === 'string') {
+      return api.post('/api/game/finish', { type: typeOrData, score: score ?? 0 })
+    }
+    return api.post('/api/game/finish', typeOrData)
+  },
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
   getCoffeeJumpLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
