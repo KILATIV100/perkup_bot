@@ -59,6 +59,7 @@ export const ordersApi = {
   pay: (id: number, paymentId: string) => api.post(`/api/orders/${id}/pay`, { paymentId }),
   getMyOrders: (page = 1) => api.get('/api/orders', { params: { page } }),
   getById: (id: number) => api.get(`/api/orders/${id}`),
+  addTip: (id: number, amount: number) => api.post(`/api/orders/${id}/tip`, { amount }),
   cancel: (id: number) => api.delete(`/api/orders/${id}`),
 }
 

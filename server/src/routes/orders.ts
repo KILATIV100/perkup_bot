@@ -12,6 +12,7 @@ import { createPosterIncomingOrder } from '../services/poster'
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID || ''
 const BOT = process.env.BOT_TOKEN || ''
 const NO_SHOW_BLOCK_THRESHOLD = 3
+const TIPS_FEATURE_ENABLED = process.env.FEATURE_TIPS !== 'false'
 
 async function tgSend(chatId: string, text: string) {
   if (!BOT || !chatId) return
@@ -310,10 +311,77 @@ export default async function orderRoutes(app: FastifyInstance) {
     const id = Number(req.params.id)
     const order = await prisma.order.findFirst({
       where: { id, userId: req.user.id },
-      include: { items: true, location: { select: { name: true, slug: true, googlePlaceId: true } } },
+      include: {
+        items: true,
+        tip: { select: { amount: true, createdAt: true } },
+        location: { select: { id: true, name: true, slug: true, googlePlaceId: true } },
+      },
     })
     if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
     return reply.send({ success: true, order })
+  })
+
+  app.post('/:id/tip', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!TIPS_FEATURE_ENABLED) {
+      return reply.status(404).send({ success: false, error: 'Tips are disabled' })
+    }
+
+    const id = Number(req.params.id)
+    const parsed = z.object({ amount: z.number().min(1).max(1000) }).safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid tip amount' })
+
+    const order = await prisma.order.findFirst({
+      where: { id, userId: req.user.id },
+      include: { tip: true, location: { select: { id: true, name: true } } },
+    })
+
+    if (!order) return reply.status(404).send({ success: false, error: 'Not found' })
+    if (order.status !== 'COMPLETED') {
+      return reply.status(400).send({ success: false, error: 'Tip is available only for completed orders' })
+    }
+    if (order.tip) {
+      return reply.status(409).send({ success: false, error: 'Tip already added for this order' })
+    }
+
+    let shiftId = order.shiftId
+    if (!shiftId) {
+      const activeShift = await prisma.shift.findFirst({
+        where: { locationId: order.locationId, endedAt: null },
+        orderBy: { startedAt: 'desc' },
+      })
+      shiftId = activeShift?.id ?? null
+    }
+    if (!shiftId) {
+      return reply.status(400).send({ success: false, error: 'No active shift for tips at this location' })
+    }
+
+    const tip = await prisma.$transaction(async (tx) => {
+      const createdTip = await tx.tip.create({
+        data: {
+          orderId: order.id,
+          userId: order.userId,
+          shiftId,
+          amount: new Prisma.Decimal(parsed.data.amount),
+        },
+      })
+
+      await tx.shift.update({
+        where: { id: shiftId! },
+        data: { totalTips: { increment: new Prisma.Decimal(parsed.data.amount) } },
+      })
+
+      return createdTip
+    })
+
+    return reply.send({
+      success: true,
+      tip: {
+        id: tip.id,
+        orderId: tip.orderId,
+        amount: Number(tip.amount),
+        createdAt: tip.createdAt,
+      },
+    })
   })
 
   app.delete('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {

@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ordersApi } from '../lib/api'
 import { useT } from '../lib/i18n'
 import { useCartStore } from '../stores/cart'
 import { useLocationStore } from '../stores/location'
+import { FEATURES } from '../lib/features'
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; description: string }> = {
   PENDING:      { label: 'Очікує',          emoji: '⏳', color: 'text-yellow-600 bg-yellow-50 border-yellow-200',   description: 'Замовлення отримано, очікує підтвердження' },
@@ -49,6 +50,16 @@ export default function OrderStatusPage() {
   const order = query.data
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING
   const canRepeatOrder = order.status === 'COMPLETED' || order.status === 'CANCELLED'
+  const canAddTip = FEATURES.TIPS && order.status === 'COMPLETED'
+
+  const addTipMutation = useMutation({
+    mutationFn: async (amount: number) => {
+      await ordersApi.addTip(order.id, amount)
+    },
+    onSuccess: () => {
+      query.refetch()
+    },
+  })
 
   const handleRepeatOrder = () => {
     if (!order.items?.length) return
@@ -73,6 +84,8 @@ export default function OrderStatusPage() {
 
     navigate('/cart')
   }
+
+  const presetTips = [10, 20, 50]
 
   return (
     <div className="p-4 pb-24 space-y-4 max-w-lg mx-auto">
@@ -131,6 +144,39 @@ export default function OrderStatusPage() {
       {order.status === 'READY' && (
         <div className="bg-green-600 text-white rounded-2xl p-4 text-center font-bold text-lg animate-pulse">
           🎉 Підійдіть до каси!
+        </div>
+      )}
+
+      {canAddTip && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+          <div>
+            <div className="font-semibold text-gray-900">{t('order.tip.title')}</div>
+            <div className="text-xs text-gray-500">{t('order.tip.subtitle')}</div>
+          </div>
+
+          {order.tip ? (
+            <div className="text-sm font-medium text-green-700">{t('order.tip.added')} ({Number(order.tip.amount).toFixed(0)} {t('common.currency')})</div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {presetTips.map((tip) => (
+                <button
+                  key={tip}
+                  disabled={addTipMutation.isPending}
+                  onClick={() => addTipMutation.mutate(tip)}
+                  className="py-2 rounded-xl border border-coffee-200 text-coffee-700 font-semibold hover:bg-coffee-50 disabled:opacity-50"
+                >
+                  +{tip} {t('common.currency')}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!order.tip && addTipMutation.isPending && (
+            <div className="text-xs text-gray-500">{t('order.tip.sending')}</div>
+          )}
+          {!order.tip && addTipMutation.isError && (
+            <div className="text-xs text-red-600">{t('common.error')}</div>
+          )}
         </div>
       )}
 
