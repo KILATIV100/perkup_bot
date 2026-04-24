@@ -103,6 +103,12 @@ const translations: Record<string, Record<Lang, string>> = {
   'checkout.selectLocation': { uk: 'Оберіть локацію', en: 'Select a location' },
   'checkout.emptyCart': { uk: 'Кошик порожній', en: 'Cart is empty' },
   'checkout.phoneRequired': { uk: 'Вкажи номер телефону для передзамовлення', en: 'Enter phone number for preorder' },
+  'checkout.promoLabel': { uk: 'Промокод', en: 'Promo code' },
+  'checkout.promoPlaceholder': { uk: 'Введіть промокод', en: 'Enter promo code' },
+  'checkout.promoApply': { uk: 'Застосувати', en: 'Apply' },
+  'checkout.promoApplying': { uk: 'Перевіряємо...', en: 'Checking...' },
+  'checkout.promoApplied': { uk: 'Промокод застосовано', en: 'Promo applied' },
+  'checkout.promoRequired': { uk: 'Введіть промокод', en: 'Enter promo code' },
 
   // ─── Orders ───
   'order.title': { uk: 'Замовлення', en: 'Order' },

@@ -63,6 +63,10 @@ export const ordersApi = {
   cancel: (id: number) => api.delete(`/api/orders/${id}`),
 }
 
+export const promosApi = {
+  validate: (data: { code: string; locationId: number; subtotal: number }) => api.post('/api/orders/promo/validate', data),
+}
+
 export const loyaltyApi = {
   getStatus: () => api.get('/api/loyalty/status'),
   getPrizes: () => api.get('/api/loyalty/prizes'),

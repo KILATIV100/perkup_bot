@@ -13,6 +13,41 @@ const OWNER_ID = process.env.OWNER_TELEGRAM_ID || ''
 const BOT = process.env.BOT_TOKEN || ''
 const NO_SHOW_BLOCK_THRESHOLD = 3
 const TIPS_FEATURE_ENABLED = process.env.FEATURE_TIPS !== 'false'
+const PROMOS_FEATURE_ENABLED = process.env.FEATURE_PROMOS !== 'false'
+
+async function resolvePromoDiscount(params: {
+  code: string
+  locationId: number
+  subtotal: number
+}) {
+  const normalizedCode = params.code.trim().toUpperCase()
+  const now = new Date()
+  const promo = await prisma.promo.findUnique({ where: { code: normalizedCode } })
+  if (!promo || !promo.isActive) return { ok: false as const, error: 'Promo not found' }
+  if (promo.expiresAt && promo.expiresAt < now) return { ok: false as const, error: 'Promo expired' }
+  if (promo.locationId && promo.locationId !== params.locationId) return { ok: false as const, error: 'Promo is not valid for this location' }
+  if (promo.maxUses !== null && promo.usedCount >= promo.maxUses) return { ok: false as const, error: 'Promo usage limit reached' }
+  if (promo.minOrderSum && params.subtotal < Number(promo.minOrderSum)) {
+    return { ok: false as const, error: `Minimum order sum is ${Number(promo.minOrderSum)} UAH` }
+  }
+  if (promo.type !== 'PERCENT' && promo.type !== 'FIXED') {
+    return { ok: false as const, error: 'Unsupported promo type for preorder' }
+  }
+
+  const rawDiscount = promo.type === 'PERCENT'
+    ? Math.round((params.subtotal * Number(promo.value)) / 100)
+    : Number(promo.value)
+  const discount = Math.max(0, Math.min(params.subtotal, rawDiscount))
+
+  return {
+    ok: true as const,
+    promoId: promo.id,
+    code: promo.code,
+    type: promo.type,
+    value: Number(promo.value),
+    discount,
+  }
+}
 
 async function tgSend(chatId: string, text: string) {
   if (!BOT || !chatId) return
@@ -54,6 +89,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       })).min(1),
       customerPhone: z.string().min(10).max(20).optional(),
       comment: z.string().max(300).optional(),
+      promoCode: z.string().min(2).max(40).optional(),
       pointsUsed: z.number().min(0).default(0),
       pointsToRedeem: z.number().min(0).optional(),
     })
@@ -63,7 +99,7 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     const rawData = result.data
     const pointsUsed = rawData.pointsToRedeem ?? rawData.pointsUsed
-    const { locationId, items, customerPhone, comment } = rawData
+    const { locationId, items, customerPhone, comment, promoCode } = rawData
 
     const location = await prisma.location.findUnique({
       where: { id: locationId, isActive: true },
@@ -151,26 +187,51 @@ export default async function orderRoutes(app: FastifyInstance) {
       }
     }
 
-    let discount = 0
+    let promoDiscount = 0
+    let normalizedPromoCode: string | null = null
+    if (promoCode?.trim()) {
+      if (!PROMOS_FEATURE_ENABLED) {
+        return reply.status(400).send({ success: false, error: 'Promo codes are disabled' })
+      }
+      if (location.hasPoster) {
+        return reply.status(400).send({ success: false, error: 'Promo codes are not available for Poster preorders yet' })
+      }
+      const promoResult = await resolvePromoDiscount({
+        code: promoCode,
+        locationId,
+        subtotal: total,
+      })
+      if (!promoResult.ok) {
+        return reply.status(400).send({ success: false, error: promoResult.error })
+      }
+      promoDiscount = promoResult.discount
+      normalizedPromoCode = promoResult.code
+    }
+
+    let pointsDiscount = 0
     if (pointsUsed > 0) {
+      if (normalizedPromoCode) {
+        return reply.status(400).send({ success: false, error: 'Promo cannot be combined with bonus redemption' })
+      }
       if (location.hasPoster) {
         return reply.status(400).send({ success: false, error: 'Bonus redemption is not available for Poster preorders yet. Bonuses will be credited after payment at the cashier.' })
       }
       if (user.points < pointsUsed) return reply.status(400).send({ success: false, error: 'Not enough points' })
       const maxDiscount = Math.floor(total * 0.2)
-      discount = Math.min(pointsUsed, maxDiscount)
+      pointsDiscount = Math.min(pointsUsed, maxDiscount)
     }
 
+    const discount = promoDiscount + pointsDiscount
     const finalTotal = Math.max(0, total - discount)
     const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
 
     const order = await prisma.$transaction(async (tx) => {
-      if (discount > 0) {
+      if (pointsDiscount > 0) {
         // Atomic conditional decrement: only succeeds if user still has enough points.
         // Prevents race when two concurrent orders try to spend the same balance.
         const res = await tx.user.updateMany({
-          where: { id: user.id, points: { gte: discount } },
-          data: { points: { decrement: discount } },
+          where: { id: user.id, points: { gte: pointsDiscount } },
+          data: { points: { decrement: pointsDiscount } },
         })
         if (res.count === 0) {
           throw new Error('INSUFFICIENT_POINTS')
@@ -184,6 +245,7 @@ export default async function orderRoutes(app: FastifyInstance) {
           status: activeShift ? 'PENDING' : 'UNASSIGNED',
           total: new Prisma.Decimal(finalTotal),
           discount: new Prisma.Decimal(discount),
+          promoCode: normalizedPromoCode,
           paymentMethod: 'cashier',
           comment: comment || null,
           pointsUsed,
@@ -192,9 +254,15 @@ export default async function orderRoutes(app: FastifyInstance) {
         },
         include: { items: true },
       })
-      if (discount > 0) {
+      if (normalizedPromoCode) {
+        await tx.promo.update({
+          where: { code: normalizedPromoCode },
+          data: { usedCount: { increment: 1 } },
+        })
+      }
+      if (pointsDiscount > 0) {
         await tx.pointsTransaction.create({ data: {
-          userId: user.id, amount: -discount, type: 'REDEEM',
+          userId: user.id, amount: -pointsDiscount, type: 'REDEEM',
           description: 'Points for order #' + created.id,
           idempotencyKey: 'redeem-order-' + created.id,
         }})
@@ -245,8 +313,8 @@ export default async function orderRoutes(app: FastifyInstance) {
           data: { posterOrderId, status: finalStatus },
         })
       } catch (error) {
-        if (discount > 0) {
-          await prisma.user.update({ where: { id: user.id }, data: { points: { increment: discount } } })
+        if (pointsDiscount > 0) {
+          await prisma.user.update({ where: { id: user.id }, data: { points: { increment: pointsDiscount } } })
           await prisma.pointsTransaction.deleteMany({ where: { idempotencyKey: 'redeem-order-' + order.id } })
         }
         await prisma.orderItem.deleteMany({ where: { orderId: order.id } })
@@ -262,6 +330,7 @@ export default async function orderRoutes(app: FastifyInstance) {
     const msg = [
       'New order #' + order.id, location.name, itemLines,
       discount > 0 ? 'Discount: -' + discount + ' uah' : '',
+      normalizedPromoCode ? 'Promo: ' + normalizedPromoCode : '',
       'Total: ' + finalTotal + ' uah',
       'Payment: at cashier / POS',
       posterOrderId ? 'Poster incoming order: ' + posterOrderId : '',
@@ -305,6 +374,34 @@ export default async function orderRoutes(app: FastifyInstance) {
       take: 20,
     })
     return reply.send({ success: true, orders })
+  })
+
+  app.post('/promo/validate', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    if (!PROMOS_FEATURE_ENABLED) {
+      return reply.status(404).send({ success: false, error: 'Promo codes are disabled' })
+    }
+    const parsed = z.object({
+      code: z.string().min(2).max(40),
+      locationId: z.number().int().positive(),
+      subtotal: z.number().min(0),
+    }).safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid request' })
+
+    const result = await resolvePromoDiscount(parsed.data)
+    if (!result.ok) {
+      return reply.status(400).send({ success: false, error: result.error })
+    }
+
+    return reply.send({
+      success: true,
+      promo: {
+        code: result.code,
+        type: result.type,
+        value: result.value,
+        discount: result.discount,
+      },
+      finalTotal: Math.max(0, parsed.data.subtotal - result.discount),
+    })
   })
 
   app.get('/:id', { preHandler: requireAuth }, async (req: any, reply: any) => {
@@ -412,7 +509,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       )
     }
 
-    if (order.discount && Number(order.discount) > 0) {
+    if (order.pointsUsed > 0 && order.discount && Number(order.discount) > 0) {
       const refundKey = 'cancel-refund-order-' + id
       const exists = await prisma.pointsTransaction.findUnique({ where: { idempotencyKey: refundKey } })
       if (!exists) {
@@ -428,6 +525,13 @@ export default async function orderRoutes(app: FastifyInstance) {
           data: { points: { increment: Number(order.discount) } },
         })
       }
+    }
+
+    if (order.promoCode) {
+      await prisma.promo.updateMany({
+        where: { code: order.promoCode, usedCount: { gt: 0 } },
+        data: { usedCount: { decrement: 1 } },
+      })
     }
     return reply.send({ success: true })
   })
