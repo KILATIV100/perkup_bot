@@ -720,9 +720,21 @@ export default async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, sent, total: users.length })
   })
   // POST /api/admin/manual-award — ручне нарахування балів баристою по телефону
-  app.post('/manual-award', { preHandler: requireStaff }, async (req: any, reply: any) => {
-    const { phone, amount, reason, locationSlug } = req.body as any
-    if (!phone || !amount || amount <= 0) {
+  // Підтримує x-bot-secret авторизацію для бота
+  app.post('/manual-award', async (req: any, reply: any) => {
+    const botSecret = req.headers['x-bot-secret']
+    if (botSecret !== process.env.BOT_SECRET) {
+      // Якщо не бот — перевіряємо staff auth
+      try { await req.jwtVerify() } catch { return reply.status(401).send({ success: false, error: 'Unauthorized' }) }
+      const userId: number = req.user?.id
+      const staff = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+      if (!staff || !['BARISTA', 'ADMIN', 'OWNER'].includes(staff.role)) {
+        return reply.status(403).send({ success: false, error: 'Forbidden' })
+      }
+    }
+    const { phone, amount, checkAmount, reason, locationSlug } = req.body as any
+    // amount = прямо бали, checkAmount = сума чеку (сервер рахує сам)
+    if (!phone || (!amount && !checkAmount)) {
       return reply.status(400).send({ success: false, error: 'Phone and amount required' })
     }
 
@@ -736,7 +748,19 @@ export default async function adminRoutes(app: FastifyInstance) {
       return reply.status(404).send({ success: false, error: 'User not found by this phone number' })
     }
 
-    const pts = Math.round(Number(amount))
+    // Розраховуємо бали
+    let pts: number
+    if (checkAmount && Number(checkAmount) > 0) {
+      // Сума чеку → розраховуємо відсоток по рівню клієнта
+      const { calcEarnedPoints } = await import('../lib/loyalty')
+      const tempUser = await prisma.user.findFirst({
+        where: { phone: normalized },
+        select: { points: true }
+      })
+      pts = calcEarnedPoints(Number(checkAmount), tempUser?.points || 0)
+    } else {
+      pts = Math.round(Number(amount))
+    }
     const desc = reason || ('Manual award by barista' + (locationSlug ? ' at ' + locationSlug : ''))
     const idempotencyKey = 'manual-' + user.id + '-' + Date.now()
 
@@ -772,7 +796,11 @@ export default async function adminRoutes(app: FastifyInstance) {
   })
 
   // GET /api/admin/find-user-by-phone — пошук клієнта по телефону
-  app.get('/find-user-by-phone', { preHandler: requireStaff }, async (req: any, reply: any) => {
+  app.get('/find-user-by-phone', async (req: any, reply: any) => {
+    const botSecret = req.headers['x-bot-secret']
+    if (botSecret !== process.env.BOT_SECRET) {
+      try { await req.jwtVerify() } catch { return reply.status(401).send({ success: false, error: 'Unauthorized' }) }
+    }
     const phone = (req.query as any)?.phone as string
     if (!phone) return reply.status(400).send({ success: false, error: 'Phone required' })
 

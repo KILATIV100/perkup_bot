@@ -567,6 +567,124 @@ bot.on('message:text', async (ctx) => {
   )
 })
 
+
+// ─── Barista commands ─────────────────────────────────────────────
+// Перевірка ролі бариста або вище
+async function isBarista(telegramId: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/bot/${telegramId}`, {
+      headers: { 'x-bot-secret': BOT_SECRET },
+    })
+    if (!res.ok) return false
+    const data = await res.json()
+    return ['BARISTA', 'ADMIN', 'OWNER'].includes(data?.user?.role)
+  } catch { return false }
+}
+
+// /check +380... — перевірити клієнта
+bot.command('check', async (ctx) => {
+  if (!ctx.from?.id || !await isBarista(ctx.from.id)) return
+  const phone = ctx.match?.trim()
+  if (!phone) {
+    await ctx.reply('Використання: /check +380501234567')
+    return
+  }
+  try {
+    const res = await fetch(`${API_URL}/api/admin/find-user-by-phone?phone=${encodeURIComponent(phone)}`, {
+      headers: { 'x-bot-secret': BOT_SECRET },
+    })
+    const data = await res.json()
+    if (!res.ok || !data.user) {
+      await ctx.reply('\u274c \u041a\u043b\u0456\u0454\u043d\u0442\u0430 \u043d\u0435 \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e')
+      return
+    }
+    const u = data.user
+    const lvlEmoji = levelEmoji(u.level)
+    await ctx.reply(
+      `${lvlEmoji} *${u.firstName} ${u.lastName || ''}*\n` +
+      `\u0420\u0456\u0432\u0435\u043d\u044c: ${u.level}\n` +
+      `\u0411\u0430\u043b\u0438: *${u.points}*\n` +
+      `\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u044c: ${u.monthlyOrders}\n` +
+      `\ud83d\udcf1 ${u.phone}`,
+      { parse_mode: 'Markdown' }
+    )
+  } catch {
+    await ctx.reply('\u274c \u041f\u043e\u043c\u0438\u043b\u043a\u0430 \u0437\u0430\u043f\u0438\u0442\u0443')
+  }
+})
+
+// /award +380... 150 — нарахувати бали за сумою чеку або вручну
+// /award +380... pts 20 — нарахувати 20 балів прямо
+bot.command('award', async (ctx) => {
+  if (!ctx.from?.id || !await isBarista(ctx.from.id)) return
+  const args = ctx.match?.trim().split(/\s+/) || []
+  
+  if (args.length < 2) {
+    await ctx.reply(
+      '*Нарахування балів:*\n\n' +
+      '`/award +380... 150` — за сумою чеку (авто %)\n' +
+      '`/award +380... pts 20` — рівно 20 балів\n\n' +
+      '`/check +380...` — перевірити клієнта',
+      { parse_mode: 'Markdown' }
+    )
+    return
+  }
+
+  const phone = args[0]
+  let amount: number
+  let isManualPts = false
+
+  if (args[1] === 'pts' && args[2]) {
+    amount = parseInt(args[2])
+    isManualPts = true
+  } else {
+    amount = parseInt(args[1])
+  }
+
+  if (!amount || amount <= 0) {
+    await ctx.reply('\u274c \u041d\u0435\u0432\u0456\u0440\u043d\u0430 \u0441\u0443\u043c\u0430')
+    return
+  }
+
+  try {
+    // Якщо передана сума чеку — сервер сам рахує бали через loyalty
+    // Якщо pts — передаємо конкретну кількість
+    const reason = isManualPts
+      ? ('\u0420\u0443\u0447\u043d\u0435 \u043d\u0430\u0440\u0430\u0445\u0443\u0432\u0430\u043d\u043d\u044f \u0431\u0430\u0440\u0438\u0441\u0442\u043e\u044e')
+      : ('\u041e\u0444\u043b\u0430\u0439\u043d \u0447\u0435\u043a ' + amount + ' \u0433\u0440\u043d (\u0431\u0430\u0440\u0438\u0441\u0442\u0430)')
+
+    const body: any = { phone, reason }
+    if (isManualPts) {
+      body.amount = amount
+    } else {
+      body.checkAmount = amount  // сервер порахує бали сам
+    }
+
+    const res = await fetch(`${API_URL}/api/admin/manual-award`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-bot-secret': BOT_SECRET },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+
+    if (!res.ok) {
+      await ctx.reply('\u274c ' + (data.error || '\u041f\u043e\u043c\u0438\u043b\u043a\u0430'))
+      return
+    }
+
+    const u = data.user
+    const pts = data.pointsAwarded
+    await ctx.reply(
+      `\u2705 *+${pts} \u0431\u0430\u043b\u0456\u0432*\n` +
+      `${u.firstName} ${u.lastName || ''}\n` +
+      `\u0411\u0430\u043b\u0430\u043d\u0441: *${u.points} \u0431\u0430\u043b\u0456\u0432*`,
+      { parse_mode: 'Markdown' }
+    )
+  } catch {
+    await ctx.reply('\u274c \u041f\u043e\u043c\u0438\u043b\u043a\u0430 \u0437\u0430\u043f\u0438\u0442\u0443')
+  }
+})
+
 // ─── Set commands ─────────────────────────────────────────────────
 async function setBotCommands() {
   await bot.api.setMyCommands([

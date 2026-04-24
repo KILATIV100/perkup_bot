@@ -108,6 +108,8 @@ export const adminApi = {
   findUserByPhone: (phone: string) => api.get('/api/admin/find-user-by-phone?phone=' + encodeURIComponent(phone)),
   manualAward: (phone: string, amount: number, reason: string, locationSlug?: string) =>
     api.post('/api/admin/manual-award', { phone, amount, reason, locationSlug }),
+  awardByCheck: (phone: string, checkAmount: number) =>
+    api.post('/api/admin/manual-award', { phone, checkAmount, reason: '\u041e\u0444\u043b\u0430\u0439\u043d \u0447\u0435\u043a (\u0431\u0430\u0440\u0438\u0441\u0442\u0430)' }),
   getDashboard: () => api.get('/api/admin/dashboard'),
   getUsers: (params?: { page?: number; role?: string; search?: string }) => api.get('/api/admin/users', { params }),
   setUserRole: (id: number, role: string) => api.patch(`/api/admin/users/${id}/role`, { role }),

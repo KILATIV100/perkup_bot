@@ -175,6 +175,12 @@ export default function ProfilePage() {
           <span className="text-gray-300">›</span>
         </button>
         {isStaff && (
+          <button onClick={() => navigate('/barista')} className="w-full text-left px-4 py-3.5 flex justify-between items-center bg-amber-50 active:bg-amber-100 transition-colors rounded-xl mb-1">
+            <span className="text-amber-800 font-bold">☕ Нарахувати бали офлайн</span>
+            <span className="text-amber-600">›</span>
+          </button>
+        )}
+        {isStaff && (
           <button onClick={() => navigate('/admin')} className="w-full text-left px-4 py-3.5 flex justify-between items-center active:bg-gray-50 transition-colors">
             <span className="text-gray-700 font-medium">{t('profile.admin')}</span>
             <span className="text-gray-300">›</span>
