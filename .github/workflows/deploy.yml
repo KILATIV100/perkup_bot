@@ -13,10 +13,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 18
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: npm
           cache-dependency-path: client/package-lock.json
 
@@ -28,18 +28,8 @@ jobs:
         working-directory: client
         run: npm run build
 
-      - name: Add SPA fallback files
-        working-directory: client/dist
-        run: |
-          cp index.html 404.html
-          cat > .htaccess <<'HTACCESS'
-          RewriteEngine On
-          RewriteBase /
-          RewriteRule ^index\.html$ - [L]
-          RewriteCond %{REQUEST_FILENAME} !-f
-          RewriteCond %{REQUEST_FILENAME} !-d
-          RewriteRule . /index.html [L]
-          HTACCESS
+      - name: Add _redirects for SPA routing
+        run: echo "/* /index.html 200" > client/dist/_redirects
 
       - name: Deploy dist to CPanel over FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -48,5 +38,8 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: client/dist/
-          server-dir: /public_html/perkup_bot/CPanel/dist/
+          server-dir: /public_html/
           dangerous-clean-slate: true
+          exclude: |
+            **/.git*
+            **/.git*/**

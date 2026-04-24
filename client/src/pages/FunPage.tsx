@@ -51,14 +51,16 @@ export default function FunPage() {
   const [statusLoading, setStatusLoading] = useState(false)
   const [finishingType, setFinishingType] = useState<string | null>(null)
 
-  const handleGameOver = useCallback(async (score: number) => {
-    setLastScore(score)
-    try {
-      const res = await gameApi.submitScore(score)
-      setLastResult(res.data)
-    } catch {
-      setLastResult(null)
-    }
+  useEffect(() => {
+    if (game !== 'hub') window.scrollTo({ top: 0, behavior: 'instant' })
+  }, [game])
+
+  const loadStatus = useCallback(() => {
+    setLoadingStatus(true)
+    gameApi.getStatus()
+      .then((r: any) => setStatus(r.data))
+      .catch(() => {})
+      .finally(() => setLoadingStatus(false))
   }, [])
 
   const loadLeaderboard = useCallback(async () => {
