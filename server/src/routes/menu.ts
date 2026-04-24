@@ -7,6 +7,14 @@ import { buildMenuQrSvg, buildPrintableMenuHtml, groupProductsByCategory, sortMe
 
 const MENU_CACHE_TTL = 1800; // 30 хвилин
 
+function getPrimaryBadge(product: any): 'NEW' | 'TOP' | 'SEASONAL' | 'RECOMMENDED' | null {
+  if (product.isNew) return 'NEW'
+  if (product.isTop) return 'TOP'
+  if (product.isSeasonal) return 'SEASONAL'
+  if (product.isRecommended) return 'RECOMMENDED'
+  return null
+}
+
 function getBaseUrl(req: any) {
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
   const protocol = forwardedProto || req.protocol || 'https'
@@ -78,6 +86,7 @@ export default async function menuRoutes(app: FastifyInstance) {
     products = products.map((p: any) => ({
       ...p,
       displayImageUrl: p.imageUrl || p.posterImageUrl || null,
+      primaryBadge: getPrimaryBadge(p),
     }))
 
     // Apply filters
