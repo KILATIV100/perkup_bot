@@ -60,7 +60,7 @@ export default async function gameRoutes(app: FastifyInstance) {
   }
 
   // GET /api/game/status
-  app.get('/status', { preHandler: requireAuth }, async (req: any, reply) => {
+  app.get('/status', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const userId: number = req.user.id
     const dayKey = getKyivDayKey()
     const todayKey = `game:daily:${userId}:${dayKey}`
@@ -107,7 +107,7 @@ export default async function gameRoutes(app: FastifyInstance) {
   })
 
   // POST /api/game/finish
-  app.post('/finish', { preHandler: requireAuth }, async (req: any, reply) => {
+  app.post('/finish', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const userId: number = req.user.id
     const parsed = gameFinishSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -198,7 +198,7 @@ export default async function gameRoutes(app: FastifyInstance) {
   })
 
   // POST /api/game/coffee-jump/score
-  app.post('/coffee-jump/score', { preHandler: requireAuth }, async (req: any, reply) => {
+  app.post('/coffee-jump/score', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const { score } = req.body as { score?: number }
     const userId: number = req.user.id
 
@@ -284,7 +284,7 @@ export default async function gameRoutes(app: FastifyInstance) {
   })
 
   // GET /api/game/leaderboard?type=points|games
-  app.get('/leaderboard', async (req: any, reply) => {
+  app.get('/leaderboard', async (req: any, reply: any) => {
     const type = (req.query?.type as string) || 'points'
 
     if (type === 'games') {
@@ -293,19 +293,19 @@ export default async function gameRoutes(app: FastifyInstance) {
         where: { isActive: true },
         select: {
           id: true, firstName: true, lastName: true, level: true,
-          _count: { select: { pointsTransactions: { where: { type: 'GAME' } } } }
+          _count: { select: { transactions: { where: { type: 'GAME' } } } }
         },
-        orderBy: { pointsTransactions: { _count: 'desc' } },
+        orderBy: { transactions: { _count: 'desc' } },
         take: 20,
       })
       return reply.send({
         success: true,
         type: 'games',
-        leaderboard: top.map((u, i) => ({
+        leaderboard: top.map((u: any, i: number) => ({
           rank: i + 1,
           name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
           level: u.level,
-          gamesPlayed: u._count.pointsTransactions,
+          gamesPlayed: u._count.transactions,
         }))
       })
     }
@@ -320,7 +320,7 @@ export default async function gameRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       type: 'points',
-      leaderboard: top.map((u, i) => ({
+      leaderboard: top.map((u: any, i: number) => ({
         rank: i + 1,
         name: u.firstName + (u.lastName ? ' ' + u.lastName.charAt(0) + '.' : ''),
         points: u.points,
@@ -331,7 +331,7 @@ export default async function gameRoutes(app: FastifyInstance) {
 
 
   // GET /api/game/coffee-jump/leaderboard
-  app.get('/coffee-jump/leaderboard', async (_req, reply) => {
+  app.get('/coffee-jump/leaderboard', async (_req: any, reply: any) => {
     const top = await redis.zrevrange(LEADERBOARD_KEY, 0, 19, 'WITHSCORES')
     const entries: { rank: number; userId: number; name: string; score: number }[] = []
     for (let i = 0; i < top.length; i += 2) {
@@ -344,7 +344,7 @@ export default async function gameRoutes(app: FastifyInstance) {
   })
 
   // GET /api/game/coffee-jump/my-stats
-  app.get('/coffee-jump/my-stats', { preHandler: requireAuth }, async (req: any, reply) => {
+  app.get('/coffee-jump/my-stats', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const userId: number = req.user.id
     const bestScore = await redis.zscore(LEADERBOARD_KEY, String(userId))
     const rank = await redis.zrevrank(LEADERBOARD_KEY, String(userId))
