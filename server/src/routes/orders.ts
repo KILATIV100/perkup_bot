@@ -45,6 +45,7 @@ async function resolvePromoDiscount(params: {
     code: promo.code,
     type: promo.type,
     value: Number(promo.value),
+    maxUses: promo.maxUses,
     discount,
   }
 }
@@ -189,6 +190,8 @@ export default async function orderRoutes(app: FastifyInstance) {
 
     let promoDiscount = 0
     let normalizedPromoCode: string | null = null
+    let promoId: number | null = null
+    let promoMaxUses: number | null = null
     if (promoCode?.trim()) {
       if (!PROMOS_FEATURE_ENABLED) {
         return reply.status(400).send({ success: false, error: 'Promo codes are disabled' })
@@ -206,6 +209,8 @@ export default async function orderRoutes(app: FastifyInstance) {
       }
       promoDiscount = promoResult.discount
       normalizedPromoCode = promoResult.code
+      promoId = promoResult.promoId
+      promoMaxUses = promoResult.maxUses
     }
 
     let pointsDiscount = 0
@@ -225,6 +230,7 @@ export default async function orderRoutes(app: FastifyInstance) {
     const finalTotal = Math.max(0, total - discount)
     const qrCode = 'PU-' + crypto.randomBytes(6).toString('hex').toUpperCase()
 
+    let orderFailure: 'INSUFFICIENT_POINTS' | 'PROMO_USAGE_LIMIT_REACHED' | null = null
     const order = await prisma.$transaction(async (tx) => {
       if (pointsDiscount > 0) {
         // Atomic conditional decrement: only succeeds if user still has enough points.
@@ -237,6 +243,28 @@ export default async function orderRoutes(app: FastifyInstance) {
           throw new Error('INSUFFICIENT_POINTS')
         }
       }
+      if (normalizedPromoCode && promoId) {
+        const reserveCount = promoMaxUses === null
+          ? await tx.promo.updateMany({
+              where: { id: promoId, code: normalizedPromoCode, isActive: true },
+              data: { usedCount: { increment: 1 } },
+            })
+          : await tx.promo.updateMany({
+              where: {
+                id: promoId,
+                code: normalizedPromoCode,
+                isActive: true,
+                maxUses: promoMaxUses,
+                usedCount: { lt: promoMaxUses },
+              },
+              data: { usedCount: { increment: 1 } },
+            })
+
+        if (reserveCount.count === 0) {
+          throw new Error('PROMO_USAGE_LIMIT_REACHED')
+        }
+      }
+
       const created = await tx.order.create({
         data: {
           userId: user.id,
@@ -254,12 +282,6 @@ export default async function orderRoutes(app: FastifyInstance) {
         },
         include: { items: true },
       })
-      if (normalizedPromoCode) {
-        await tx.promo.update({
-          where: { code: normalizedPromoCode },
-          data: { usedCount: { increment: 1 } },
-        })
-      }
       if (pointsDiscount > 0) {
         await tx.pointsTransaction.create({ data: {
           userId: user.id, amount: -pointsDiscount, type: 'REDEEM',
@@ -269,11 +291,21 @@ export default async function orderRoutes(app: FastifyInstance) {
       }
       return created
     }).catch((err: Error) => {
-      if (err.message === 'INSUFFICIENT_POINTS') return null
+      if (err.message === 'INSUFFICIENT_POINTS') {
+        orderFailure = 'INSUFFICIENT_POINTS'
+        return null
+      }
+      if (err.message === 'PROMO_USAGE_LIMIT_REACHED') {
+        orderFailure = 'PROMO_USAGE_LIMIT_REACHED'
+        return null
+      }
       throw err
     })
 
     if (!order) {
+      if (orderFailure === 'PROMO_USAGE_LIMIT_REACHED') {
+        return reply.status(409).send({ success: false, error: 'PROMO_USAGE_LIMIT_REACHED', message: 'Promo usage limit reached' })
+      }
       return reply.status(400).send({ success: false, error: 'Not enough points' })
     }
 
@@ -452,23 +484,31 @@ export default async function orderRoutes(app: FastifyInstance) {
       return reply.status(400).send({ success: false, error: 'No active shift for tips at this location' })
     }
 
-    const tip = await prisma.$transaction(async (tx) => {
-      const createdTip = await tx.tip.create({
-        data: {
-          orderId: order.id,
-          userId: order.userId,
-          shiftId,
-          amount: new Prisma.Decimal(parsed.data.amount),
-        },
-      })
+    let tip: any
+    try {
+      tip = await prisma.$transaction(async (tx) => {
+        const createdTip = await tx.tip.create({
+          data: {
+            orderId: order.id,
+            userId: order.userId,
+            shiftId,
+            amount: new Prisma.Decimal(parsed.data.amount),
+          },
+        })
 
-      await tx.shift.update({
-        where: { id: shiftId! },
-        data: { totalTips: { increment: new Prisma.Decimal(parsed.data.amount) } },
-      })
+        await tx.shift.update({
+          where: { id: shiftId! },
+          data: { totalTips: { increment: new Prisma.Decimal(parsed.data.amount) } },
+        })
 
-      return createdTip
-    })
+        return createdTip
+      })
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return reply.status(409).send({ success: false, error: 'Tip already added for this order' })
+      }
+      throw error
+    }
 
     return reply.send({
       success: true,
