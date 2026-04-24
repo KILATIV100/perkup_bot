@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ordersApi } from '../lib/api'
 import { useT } from '../lib/i18n'
+import { useCartStore } from '../stores/cart'
+import { useLocationStore } from '../stores/location'
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; description: string }> = {
   PENDING:      { label: 'Очікує',          emoji: '⏳', color: 'text-yellow-600 bg-yellow-50 border-yellow-200',   description: 'Замовлення отримано, очікує підтвердження' },
@@ -18,6 +20,8 @@ export default function OrderStatusPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const t = useT()
+  const { clearCart, addItem } = useCartStore()
+  const setActiveLocation = useLocationStore(s => s.setActiveLocation)
 
   const query = useQuery({
     queryKey: ['order', id],
@@ -44,6 +48,31 @@ export default function OrderStatusPage() {
 
   const order = query.data
   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING
+  const canRepeatOrder = order.status === 'COMPLETED' || order.status === 'CANCELLED'
+
+  const handleRepeatOrder = () => {
+    if (!order.items?.length) return
+
+    clearCart()
+
+    if (order.location) {
+      setActiveLocation(order.location)
+    }
+
+    order.items.forEach((item: any) => {
+      addItem({
+        productId: item.productId,
+        bundleId: item.bundleId,
+        name: item.name,
+        price: Number(item.price),
+        quantity: Number(item.quantity) || 1,
+        modifiers: item.modifiers || undefined,
+        locationId: order.location?.id,
+      })
+    })
+
+    navigate('/cart')
+  }
 
   return (
     <div className="p-4 pb-24 space-y-4 max-w-lg mx-auto">
@@ -105,9 +134,9 @@ export default function OrderStatusPage() {
         </div>
       )}
 
-      {order.status === 'COMPLETED' && (
-        <button onClick={() => navigate('/menu')} className="w-full py-3 rounded-2xl bg-coffee-600 text-white font-semibold">
-          Зробити нове замовлення ☕
+      {canRepeatOrder && (
+        <button onClick={handleRepeatOrder} className="w-full py-3 rounded-2xl bg-coffee-600 text-white font-semibold">
+          {t('order.repeat')}
         </button>
       )}
     </div>
