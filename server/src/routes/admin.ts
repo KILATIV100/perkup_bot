@@ -155,6 +155,35 @@ export default async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, user })
   })
 
+  app.post('/users/:id/reset-no-show', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) {
+      return reply.status(400).send({ success: false, error: 'Invalid user id' })
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        noShowCount: 0,
+        cashPaymentBlocked: false,
+      },
+      select: {
+        id: true,
+        noShowCount: true,
+        cashPaymentBlocked: true,
+      },
+    }).catch(() => null)
+
+    if (!user) return reply.status(404).send({ success: false, error: 'User not found' })
+
+    return reply.send({
+      success: true,
+      userId: user.id,
+      noShowCount: user.noShowCount,
+      cashPaymentBlocked: user.cashPaymentBlocked,
+    })
+  })
+
   app.get('/orders', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const query = z.object({
       page: z.coerce.number().int().min(1).default(1),
