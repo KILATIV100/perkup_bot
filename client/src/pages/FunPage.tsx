@@ -1,338 +1,136 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import CoffeeJumpGame from '../components/CoffeeJumpGame'
+import { useState, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { gameApi } from '../lib/api'
+import CoffeeJumpGame from '../components/CoffeeJumpGame'
+import TicTacToe from '../games/TicTacToe'
+import MemoryGame from '../games/MemoryGame'
+import QuizGame from '../games/QuizGame'
+import WordPuzzle from '../games/WordPuzzle'
 
-interface LeaderEntry {
-  rank: number
-  userId: number
-  name: string
-  score: number
-}
-
-interface MyStats {
-  bestScore: number
-  rank: number | null
-  playsToday: number
-  playsLimit: number
-  rewards: { score: number; points: number; claimed: boolean }[]
-}
-interface GameStatus {
-  date: string
-  playsToday: number
-  playsLimit: number
-  pointsEarnedToday: number
-  pointsCapToday: number
-}
+type GameId = 'hub' | 'runner' | 'tictactoe' | 'memory' | 'quiz' | 'word'
 
 interface GameStatus {
-  date: string
-  playsToday: number
-  playsLimit: number
-  pointsEarnedToday: number
-  pointsCapToday: number
+  daily: { current: number; max: number }
+  pending: number
+  bonus: number
+  canPlay: Record<string, boolean>
 }
 
-type Tab = 'game' | 'leaderboard' | 'rewards'
-type MiniGameType = 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'
-
-const MINI_GAMES: Array<{ type: MiniGameType; label: string; score: number }> = [
-  { type: 'TIC_TAC_TOE', label: 'Tic Tac Toe', score: 10 },
-  { type: 'PERKIE_CATCH', label: 'Runner', score: 12 },
-  { type: 'BARISTA_RUSH', label: 'Barista Rush', score: 14 },
-  { type: 'MEMORY_COFFEE', label: 'Memory', score: 8 },
-  { type: 'PERKIE_JUMP', label: 'Word Puzzle', score: 6 },
+const GAMES = [
+  { id: 'runner'    as GameId, emoji: '🏃', name: 'PerkUp Runner',   desc: 'Стрибай, збирай зерна',   pts: 'до 10 балів', badge: 'Соло',        badgeColor: 'bg-sky-100 text-sky-700' },
+  { id: 'tictactoe' as GameId, emoji: '❌', name: 'Хрестики-нулики', desc: 'Vs AI · Cooldown 4 год',  pts: 'Перемога 5б', badge: '1v1',          badgeColor: 'bg-green-100 text-green-700' },
+  { id: 'memory'    as GameId, emoji: '🃏', name: "Кавова пам'ять",  desc: 'Знайди всі пари',         pts: 'до 5 балів',  badge: 'Соло',         badgeColor: 'bg-sky-100 text-sky-700' },
+  { id: 'quiz'      as GameId, emoji: '🎯', name: 'Кавовий квіз',    desc: 'Cooldown 2 год',          pts: '3 бали',      badge: 'Cooldown 2г',  badgeColor: 'bg-violet-100 text-violet-700' },
+  { id: 'word'      as GameId, emoji: '🧩', name: 'Кавові слова',    desc: 'Відгадай за підказками',  pts: '1б/слово',    badge: 'Соло',         badgeColor: 'bg-sky-100 text-sky-700' },
 ]
 
 export default function FunPage() {
-  const [tab, setTab] = useState<Tab>('game')
-  const [lastScore, setLastScore] = useState<number | null>(null)
-  const [lastResult, setLastResult] = useState<{
-    isNewRecord: boolean; bestScore: number; rank: number | null; earnedPoints: number
-  } | null>(null)
-  const [leaderboard, setLeaderboard] = useState<LeaderEntry[]>([])
-  const [lbLoading, setLbLoading] = useState(false)
-  const [stats, setStats] = useState<MyStats | null>(null)
-  const [statsLoading, setStatsLoading] = useState(false)
-  const [gameStatus, setGameStatus] = useState<GameStatus | null>(null)
-  const [statusLoading, setStatusLoading] = useState(false)
-  const [finishingType, setFinishingType] = useState<string | null>(null)
+  const [game, setGame] = useState<GameId>('hub')
+  const [status, setStatus] = useState<GameStatus | null>(null)
+  const [loadingStatus, setLoadingStatus] = useState(true)
+  const [toast, setToast] = useState('')
+  const navigate = useNavigate()
 
-  const handleGameOver = useCallback(async (score: number) => {
-    setLastScore(score)
-    try {
-      const res = await gameApi.submitScore(score)
-      setLastResult(res.data)
-    } catch {
-      setLastResult(null)
-    }
+  useEffect(() => {
+    if (game !== 'hub') window.scrollTo({ top: 0, behavior: 'instant' })
   }, [game])
 
-  const loadLeaderboard = useCallback(async () => {
-    setLbLoading(true)
-    try {
-      const res = await gameApi.getLeaderboard()
-      setLeaderboard(res.data.leaderboard || [])
-    } catch {
-      setLeaderboard([])
-    } finally {
-      setLbLoading(false)
-    }
+  const loadStatus = useCallback(() => {
+    setLoadingStatus(true)
+    gameApi.getStatus()
+      .then((r: any) => setStatus(r.data))
+      .catch(() => {})
+      .finally(() => setLoadingStatus(false))
   }, [])
 
   useEffect(() => { loadStatus() }, [game, loadStatus])
 
-  const loadStats = useCallback(async () => {
-    setStatsLoading(true)
-    try {
-      const res = await gameApi.getMyStats()
-      setStats(res.data)
-    } catch {
-      setStats(null)
-    } finally {
-      setStatsLoading(false)
-    }
-  }, [])
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500) }
 
-  const loadGameStatus = useCallback(async () => {
-    setStatusLoading(true)
-    try {
-      const res = await gameApi.getStatus()
-      setGameStatus(res.data)
-    } catch {
-      setGameStatus(null)
-    } finally {
-      setStatusLoading(false)
-    }
-  }, [])
+  const handleFinish = useCallback((pts: number) => {
+    if (pts > 0) showToast(`+${pts} балів зараховано! ☕`)
+    else showToast('Наступного разу пощастить!')
+    loadStatus()
+    setTimeout(() => setGame('hub'), 2500)
+  }, [loadStatus])
 
-  const finishMiniGame = useCallback(async (type: MiniGameType, score: number) => {
-    setFinishingType(type)
-    try {
-      await gameApi.finish({ type, score })
-      await loadGameStatus()
-      await loadStats()
-    } finally {
-      setFinishingType(null)
-    }
-  }, [loadGameStatus, loadStats])
+  const dailyUsed = status?.daily.current ?? 0
+  const dailyMax  = status?.daily.max ?? 60
+  const progress  = Math.min(100, Math.round((dailyUsed / dailyMax) * 100))
 
-  useEffect(() => {
-    if (tab === 'leaderboard') loadLeaderboard()
-    if (tab === 'rewards') loadStats()
-    if (tab === 'game') loadGameStatus()
-  }, [tab, loadLeaderboard, loadStats, loadGameStatus])
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 pt-3">
-        <Link to="/community" className="block bg-gradient-to-r from-coffee-50 to-amber-50 border border-coffee-200 rounded-xl p-3">
-          <div className="font-bold text-coffee-800">Клуб PerkUp</div>
-          <div className="text-xs text-gray-600">Настільні ігри, кіновечори та люди поруч.</div>
-        </Link>
-      </div>
-
-      <div className="flex border-b border-gray-100 bg-white sticky top-0 z-10 mt-2">
-        {([
-          { key: 'game' as Tab, label: '🎮 Гра' },
-          { key: 'leaderboard' as Tab, label: '🏆 Топ' },
-          { key: 'rewards' as Tab, label: '🎁 Нагороди' },
-        ]).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex-1 py-3 text-sm font-bold transition-colors ${
-              tab === t.key ? 'text-coffee-600 border-b-2 border-coffee-500' : 'text-gray-400'
-            }`}
-          >
-            ←
-          </button>
-        ))}
-      </div>
-
-      {tab === 'game' && (
-        <div className="flex-1 flex flex-col p-3 pb-24 gap-3">
-          {lastResult && lastScore !== null && (
-            <div className={`p-3 rounded-xl text-center text-sm ${
-              lastResult.isNewRecord
-                ? 'bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-200'
-                : 'bg-gray-50 border border-gray-100'
-            }`}>
-              {lastResult.isNewRecord && (
-                <div className="text-amber-600 font-bold text-base mb-1">Новий рекорд 🎉</div>
-              )}
-              <div className="flex justify-center gap-4 text-gray-700">
-                <span>Результат: <b>{lastScore}</b></span>
-                <span>Рекорд: <b>{lastResult.bestScore}</b></span>
-                {lastResult.rank && <span>Місце: <b>#{lastResult.rank}</b></span>}
-              </div>
-              {lastResult.earnedPoints > 0 && (
-                <div className="mt-1 text-coffee-600 font-bold">+{lastResult.earnedPoints} бонусних балів ☕</div>
-              )}
-            </div>
-          )}
-
-          <CoffeeJumpGame onGameOver={handleGameOver} />
-
-          <div className="bg-white border border-gray-100 rounded-xl p-3">
-            <div className="font-bold text-gray-700 text-sm mb-2">Mini games progress</div>
-            {statusLoading ? (
-              <div className="text-xs text-gray-400">Loading...</div>
-            ) : gameStatus ? (
-              <div className="text-xs text-gray-500 mb-2">
-                Plays today: <b>{gameStatus.playsToday}/{gameStatus.playsLimit}</b> · Points: <b>{gameStatus.pointsEarnedToday}/{gameStatus.pointsCapToday}</b>
-              </div>
-            ) : (
-              <div className="text-xs text-gray-400 mb-2">Status unavailable</div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              {MINI_GAMES.map((game) => (
-                <button
-                  key={game.type}
-                  onClick={() => finishMiniGame(game.type, game.score)}
-                  disabled={!!finishingType}
-                  className="px-2 py-2 rounded-lg bg-coffee-50 border border-coffee-200 text-xs font-medium text-coffee-700 disabled:opacity-50"
-                >
-                  {finishingType === game.type ? 'Saving...' : game.label}
-                </button>
-              ))}
-            </div>
-          </div>
+  if (game !== 'hub') {
+    const info = GAMES.find(g => g.id === game)!
+    return (
+      <div className="min-h-screen bg-[#FAF7F4]">
+        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-stone-200 px-4 py-3 flex items-center gap-3">
+          <button onClick={() => setGame('hub')} className="w-8 h-8 flex items-center justify-center rounded-xl bg-stone-100 text-stone-600 text-sm">←</button>
+          <span className="font-semibold text-stone-800">{info.emoji} {info.name}</span>
         </div>
-      )}
-
-      {tab === 'leaderboard' && (
-        <div className="flex-1 p-4 pb-24">
-          <h2 className="text-lg font-bold text-coffee-800 mb-3">🏆 Лідерборд</h2>
-          {lbLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="skeleton h-12 rounded-xl" />
-              ))}
-            </div>
-          ) : leaderboard.length === 0 ? (
-            <div className="text-center text-gray-400 py-12">
-              <span className="text-4xl block mb-2">🎮</span>
-              Поки що немає результатів
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {leaderboard.map((entry) => (
-                <div
-                  key={entry.userId}
-                  className={`flex items-center gap-3 p-3 rounded-xl border ${
-                    entry.rank <= 3
-                      ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200'
-                      : 'bg-white border-gray-100'
-                  }`}
-                >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                    entry.rank === 1 ? 'bg-amber-400 text-white' :
-                      entry.rank === 2 ? 'bg-gray-300 text-white' :
-                        entry.rank === 3 ? 'bg-amber-600 text-white' :
-                          'bg-gray-100 text-gray-500'
-                  }`}>
-                    {entry.rank <= 3 ? ['🥇', '🥈', '🥉'][entry.rank - 1] : entry.rank}
-                  </div>
-                  <div className="flex-1">
-                    <span className="font-bold text-gray-800">{entry.name}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-bold text-coffee-600">☕ {entry.score.toLocaleString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="max-w-md mx-auto py-4">
+          {game === 'runner'    && <div className="px-4"><CoffeeJumpGame onGameOver={(s: number) => handleFinish(Math.min(Math.floor(s / 100), 10))} /></div>}
+          {game === 'tictactoe' && <TicTacToe onFinish={handleFinish} />}
+          {game === 'memory'    && <MemoryGame onFinish={handleFinish} />}
+          {game === 'quiz'      && <QuizGame onFinish={handleFinish} />}
+          {game === 'word'      && <WordPuzzle onFinish={handleFinish} />}
         </div>
+        {toast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-xl text-sm font-medium whitespace-nowrap z-50">{toast}</div>}
+      </div>
+    )
+  }
 
-      {tab === 'rewards' && (
-        <div className="flex-1 p-4 pb-24">
-          <h2 className="text-lg font-bold text-coffee-800 mb-3">🎁 Нагороди гри</h2>
-
-  // ── Хаб ────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#FAF7F4] pb-28">
-
-      {/* Hero */}
       <div className="bg-gradient-to-br from-amber-900 via-amber-800 to-stone-800 px-5 pt-6 pb-8">
-        <h1 className="text-white text-xl font-bold tracking-tight">🎮 Fun Zone</h1>
-        <p className="text-amber-200 text-sm mt-0.5">Грай і заробляй бали за замовлення</p>
-
-        {/* Daily progress */}
+        <h1 className="text-white text-xl font-bold">🎮 Fun Zone</h1>
+        <p className="text-amber-200 text-sm mt-0.5">Грай і заробляй бали</p>
+        <button onClick={() => navigate('/leaderboard')} className="mt-3 flex items-center gap-2 bg-white/15 text-white text-xs px-3 py-1.5 rounded-xl">
+          <span>🏆</span><span>Рейтинг гравців</span><span className="text-amber-200">→</span>
+        </button>
         <div className="mt-4 bg-white/10 rounded-2xl p-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-amber-100 text-xs font-medium">Денний ліміт балів</span>
             <span className="text-white text-sm font-bold">{dailyUsed} / {dailyMax}</span>
           </div>
           <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-amber-300 rounded-full transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            />
+            <div className="h-full bg-amber-300 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
           </div>
-          {status && (
-            <div className="flex justify-between mt-3 text-xs text-amber-200">
-              <span>зароблено сьогодні</span>
-              <span className="text-white font-semibold">{dailyMax - dailyUsed} залишилось</span>
-            </div>
-          ) : stats ? (
-            <>
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
-                  <div className="text-lg font-bold text-coffee-600">☕ {stats.bestScore}</div>
-                  <div className="text-[10px] text-gray-400">Рекорд</div>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
-                  <div className="text-lg font-bold text-coffee-600">{stats.rank ? `#${stats.rank}` : '—'}</div>
-                  <div className="text-[10px] text-gray-400">Місце</div>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-gray-100 text-center">
-                  <div className="text-lg font-bold text-coffee-600">{stats.playsToday}/{stats.playsLimit}</div>
-                  <div className="text-[10px] text-gray-400">Ігор сьогодні</div>
-                </div>
-
-              <h3 className="font-bold text-gray-700 mb-2 text-sm">Пороги нагород</h3>
-              <div className="space-y-2">
-                {stats.rewards.map((r) => {
-                  const reached = stats.bestScore >= r.score
-                  return (
-                    <div
-                      key={r.score}
-                      className={`flex items-center gap-3 p-3 rounded-xl border ${
-                        r.claimed
-                          ? 'bg-green-50 border-green-200'
-                          : reached
-                            ? 'bg-amber-50 border-amber-200'
-                            : 'bg-gray-50 border-gray-100'
-                      }`}
-                    >
-                      <div className={`text-2xl ${r.claimed ? '' : reached ? 'grayscale-0' : 'grayscale opacity-40'}`}>
-                        {r.claimed ? '✅' : reached ? '🎉' : '🔒'}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-bold text-sm text-gray-800">Потрібно очок: {r.score.toLocaleString()}</div>
-                        <div className="text-xs text-gray-500">+{r.points} бонусних балів</div>
-                      </div>
-                      <div className={`text-xs font-bold px-2 py-1 rounded-full ${
-                        r.claimed ? 'bg-green-100 text-green-700' : reached ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        {r.claimed ? 'Claimed' : reached ? 'Achieved' : `${stats.bestScore}/${r.score}`}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="text-center text-gray-400 py-12">
-              <span className="text-4xl block mb-2">🎮</span>
-              Зіграйте хоча б один раз для статистики
-            </div>
-          )}
         </div>
-      )}
+      </div>
+
+      <div className="mx-4 -mt-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-800 flex gap-2">
+        <span className="shrink-0">💡</span>
+        <span>Бали нараховуються одразу. Ліміт 60 балів на день.</span>
+      </div>
+
+      <div className="px-4 mt-5 space-y-3">
+        {GAMES.map(g => {
+          const canPlay = !loadingStatus && status?.canPlay[g.id.toUpperCase()] !== false
+          return (
+            <button key={g.id} onClick={() => setGame(g.id)}
+              className="w-full text-left bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md active:scale-[0.98] transition-all overflow-hidden">
+              <div className="flex items-center gap-4 p-4">
+                <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-3xl shrink-0 border border-amber-100">{g.emoji}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-stone-800 text-sm">{g.name}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${g.badgeColor}`}>{g.badge}</span>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-0.5">{g.desc}</p>
+                  <p className="text-xs text-amber-700 font-semibold mt-1">⭐ {g.pts}</p>
+                </div>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${loadingStatus ? 'bg-stone-100 text-stone-300' : canPlay ? 'bg-amber-800 text-white' : 'bg-stone-100 text-stone-300'}`}>
+                  {loadingStatus ? '···' : canPlay ? '▶' : '⏸'}
+                </div>
+              </div>
+              {!loadingStatus && !canPlay && (
+                <div className="px-4 pb-3 text-[10px] text-stone-400">⏱ Cooldown активний — спробуй пізніше</div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {toast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-xl text-sm font-medium whitespace-nowrap z-50">{toast}</div>}
     </div>
   )
 }

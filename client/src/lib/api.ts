@@ -89,13 +89,10 @@ export const aiApi = {
 
 export const gameApi = {
   getStatus: () => api.get('/api/game/status'),
-  finish: (data: { type: 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'; score: number }) =>
-    api.post('/api/game/finish', data),
+  finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
   getCoffeeJumpLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
-  getStatus: () => api.get('/api/game/status'),
-  finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
   getLeaderboard: (type: 'games'|'orders_week'|'orders_all') => api.get('/api/game/leaderboard?type=' + type),
 }
 
