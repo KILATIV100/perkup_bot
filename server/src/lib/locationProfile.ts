@@ -1,4 +1,4 @@
-export type LocationFormat = 'SELF_SERVICE' | 'TO_GO' | 'FAMILY_CAFE'
+export type LocationFormat = 'SELF_SERVICE' | 'INFO_MENU_ONLY' | 'TO_GO' | 'FAMILY_CAFE'
 export type PosSystem = 'NONE' | 'POSTER'
 export type MenuManagement = 'LOCAL' | 'POSTER_SYNC'
 
@@ -6,7 +6,7 @@ interface BaseLocationProfile {
   format: LocationFormat
   posSystem: PosSystem
   menuManagement: MenuManagement
-  paymentFlow: 'CASHIER_ONLY'
+  paymentFlow: 'CASHIER_ONLY' | 'NONE'
   remoteOrderingEnabled: boolean
 }
 
@@ -18,10 +18,10 @@ interface LocationProfileSource {
 
 const LOCATION_PROFILE_MAP: Record<string, Omit<BaseLocationProfile, 'remoteOrderingEnabled'>> = {
   'mark-mall': {
-    format: 'SELF_SERVICE',
+    format: 'INFO_MENU_ONLY',
     posSystem: 'NONE',
     menuManagement: 'LOCAL',
-    paymentFlow: 'CASHIER_ONLY',
+    paymentFlow: 'NONE',
   },
   krona: {
     format: 'FAMILY_CAFE',

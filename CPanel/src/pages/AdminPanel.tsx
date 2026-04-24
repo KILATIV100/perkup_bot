@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { adminApi, authApi } from '../lib/api'
 
-type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations'
+type Tab = 'dashboard' | 'users' | 'orders' | 'menu' | 'locations' | 'community'
 
 const ROLE_COLORS: Record<string, string> = {
   USER: 'bg-gray-100 text-gray-700',
@@ -49,6 +49,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'users', label: 'Юзери', icon: '👥' },
   { id: 'menu', label: 'Меню', icon: '🍽️' },
   { id: 'locations', label: 'Локації', icon: '📍' },
+  { id: 'community', label: 'Community', icon: '🫶' },
 ]
 
 export default function AdminPanel() {
@@ -117,6 +118,7 @@ export default function AdminPanel() {
               {tab === 'orders' && <OrdersTab />}
               {tab === 'menu' && <MenuTab />}
               {tab === 'locations' && <LocationsTab />}
+              {tab === 'community' && <CommunityTab />}
             </>
           )}
         </div>
@@ -1034,4 +1036,49 @@ function ToggleBtn({ label, value, onChange }: { label: string; value: boolean; 
 
 function Loader() {
   return <div className="text-center text-gray-400 py-8">Завантаження...</div>
+}
+
+function CommunityTab() {
+  const [messages, setMessages] = useState<any[]>([])
+  const [events, setEvents] = useState<any[]>([])
+  const [games, setGames] = useState<any[]>([])
+
+  const load = useCallback(async () => {
+    try {
+      const [m, e, g] = await Promise.all([
+        adminApi.getCommunityMessages({ limit: 100 }),
+        adminApi.getCommunityEvents(),
+        adminApi.getCommunityBoardGames(),
+      ])
+      setMessages(m.data.items || [])
+      setEvents(e.data.events || [])
+      setGames(g.data.games || [])
+    } catch {}
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-2xl font-bold text-gray-800">Community</h2>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl border border-gray-100 p-4"><div className="text-xs text-gray-500">Messages</div><div className="text-2xl font-bold">{messages.length}</div></div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4"><div className="text-xs text-gray-500">Board games</div><div className="text-2xl font-bold">{games.length}</div></div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4"><div className="text-xs text-gray-500">Events</div><div className="text-2xl font-bold">{events.length}</div></div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 p-4">
+        <h3 className="font-semibold mb-2">Останні повідомлення</h3>
+        <div className="space-y-2 max-h-80 overflow-auto">
+          {messages.slice(0, 30).map((m) => (
+            <div key={m.id} className="border border-gray-100 rounded-lg p-2 text-sm">
+              <div className="text-xs text-gray-400">{m.channel} · {m.user?.firstName || 'User'}</div>
+              <div>{m.text}</div>
+              <button className="text-xs text-red-600 mt-1" onClick={async () => { await adminApi.hideCommunityMessage(m.id); await load() }}>Hide</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }

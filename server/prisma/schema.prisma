@@ -49,6 +49,66 @@ enum TransactionType {
   ADMIN
 }
 
+enum PendingLoyaltyStatus {
+  PENDING
+  CLAIMED
+  EXPIRED
+}
+
+enum CommunityChannel {
+  GENERAL
+  BOARD_GAMES
+  MOVIE_NIGHTS
+}
+
+enum CommunityMessageStatus {
+  VISIBLE
+  HIDDEN
+  DELETED_BY_USER
+  DELETED_BY_ADMIN
+}
+
+enum BoardGameDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum BoardGameMeetupStatus {
+  OPEN
+  FULL
+  CANCELLED
+  COMPLETED
+}
+
+enum MeetupParticipantStatus {
+  JOINED
+  CANCELLED
+  NO_SHOW
+}
+
+enum CommunityEventType {
+  MOVIE_NIGHT
+  BOARD_GAME_NIGHT
+  MEETUP
+  OTHER
+}
+
+enum CommunityEventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum EventParticipantStatus {
+  GOING
+  MAYBE
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
 // âââ USER âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 model User {
@@ -91,6 +151,13 @@ model User {
   gameSessions        GameSession[]
   tips                Tip[]
   reviews             Review[]
+  claimedPendingLoyaltyEvents PendingLoyaltyEvent[]
+  communityMessages   CommunityMessage[]
+  boardGameMeetups    BoardGameMeetup[]
+  boardGameMeetupParticipants BoardGameMeetupParticipant[]
+  communityEventsCreated CommunityEvent[] @relation("CommunityEventCreator")
+  communityEventParticipants CommunityEventParticipant[]
+  movieVotes          MovieVote[]
 
   @@index([telegramId])
   @@index([role])
@@ -131,6 +198,9 @@ model Location {
   shifts              Shift[]
   workingHours        WorkingHours[]
   reviews             Review[]
+  pendingLoyaltyEvents PendingLoyaltyEvent[]
+  boardGameMeetups    BoardGameMeetup[]
+  communityEvents     CommunityEvent[]
 
   @@index([slug])
 }
@@ -160,6 +230,12 @@ model Product {
   category        String
   telegramFileId  String?
   imageUrl        String?
+  posterImageUrl  String?
+  isNew           Boolean  @default(false)
+  isTop           Boolean  @default(false)
+  isSeasonal      Boolean  @default(false)
+  isRecommended   Boolean  @default(false)
+  isHiddenInApp   Boolean  @default(false)
   calories        Int?
   volume          String?
   allergens       String[] @default([])
@@ -179,6 +255,177 @@ model Product {
   @@index([locationId, category, isAvailable])
   @@index([locationId, ordersCount])
   @@unique([locationId, posterProductId])
+}
+
+model PendingLoyaltyEvent {
+  id                 String               @id @default(cuid())
+  phone              String
+  locationId         Int?
+  posterAccountId    String?
+  posterTransactionId String
+  totalAmount        Int
+  points             Int
+  status             PendingLoyaltyStatus @default(PENDING)
+  expiresAt          DateTime?
+  claimedByUserId    Int?
+  claimedAt          DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  location           Location?            @relation(fields: [locationId], references: [id])
+  claimedByUser      User?                @relation(fields: [claimedByUserId], references: [id])
+
+  @@unique([posterAccountId, posterTransactionId])
+  @@index([phone])
+  @@index([status])
+}
+
+model CommunityMessage {
+  id         String                 @id @default(cuid())
+  userId     Int
+  channel    CommunityChannel
+  text       String
+  status     CommunityMessageStatus @default(VISIBLE)
+  replyToId  String?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  user       User                   @relation(fields: [userId], references: [id])
+  replyTo    CommunityMessage?      @relation("CommunityReply", fields: [replyToId], references: [id])
+  replies    CommunityMessage[]     @relation("CommunityReply")
+
+  @@index([channel, createdAt])
+  @@index([userId])
+  @@index([status])
+}
+
+model BoardGame {
+  id             String              @id @default(cuid())
+  title          String              @unique
+  description    String?
+  imageUrl       String?
+  minPlayers     Int?
+  maxPlayers     Int?
+  avgDurationMin Int?
+  difficulty     BoardGameDifficulty?
+  isAvailable    Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  meetups        BoardGameMeetup[]
+
+  @@index([isAvailable])
+}
+
+model BoardGameMeetup {
+  id          String                @id @default(cuid())
+  gameId       String?
+  creatorId    Int
+  locationId   Int?
+  title        String
+  description  String?
+  startsAt     DateTime
+  maxPlayers   Int
+  status       BoardGameMeetupStatus @default(OPEN)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  game         BoardGame?           @relation(fields: [gameId], references: [id])
+  creator      User                 @relation(fields: [creatorId], references: [id])
+  location     Location?            @relation(fields: [locationId], references: [id])
+  participants BoardGameMeetupParticipant[]
+
+  @@index([startsAt])
+  @@index([locationId])
+  @@index([status])
+  @@index([creatorId])
+}
+
+model BoardGameMeetupParticipant {
+  id        String                   @id @default(cuid())
+  meetupId  String
+  userId    Int
+  status    MeetupParticipantStatus  @default(JOINED)
+  createdAt DateTime                 @default(now())
+
+  meetup    BoardGameMeetup          @relation(fields: [meetupId], references: [id])
+  user      User                     @relation(fields: [userId], references: [id])
+
+  @@unique([meetupId, userId])
+  @@index([userId])
+  @@index([meetupId])
+}
+
+model CommunityEvent {
+  id            String                @id @default(cuid())
+  type          CommunityEventType
+  title         String
+  description   String?
+  imageUrl      String?
+  locationId    Int?
+  startsAt      DateTime
+  endsAt        DateTime?
+  capacity      Int?
+  status        CommunityEventStatus  @default(PUBLISHED)
+  createdById   Int?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  location      Location?             @relation(fields: [locationId], references: [id])
+  createdBy     User?                 @relation("CommunityEventCreator", fields: [createdById], references: [id])
+  participants  CommunityEventParticipant[]
+  movieOptions  MovieOption[]
+  movieVotes    MovieVote[]
+
+  @@index([type, startsAt])
+  @@index([locationId])
+  @@index([status])
+}
+
+model CommunityEventParticipant {
+  id        String                 @id @default(cuid())
+  eventId   String
+  userId    Int
+  status    EventParticipantStatus @default(GOING)
+  createdAt DateTime               @default(now())
+
+  event     CommunityEvent         @relation(fields: [eventId], references: [id])
+  user      User                   @relation(fields: [userId], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model MovieOption {
+  id          String           @id @default(cuid())
+  eventId     String
+  title       String
+  description String?
+  posterUrl   String?
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+
+  event       CommunityEvent   @relation(fields: [eventId], references: [id])
+  votes       MovieVote[]
+
+  @@index([eventId])
+}
+
+model MovieVote {
+  id        String         @id @default(cuid())
+  eventId   String
+  optionId  String
+  userId    Int
+  createdAt DateTime       @default(now())
+
+  event     CommunityEvent @relation(fields: [eventId], references: [id])
+  option    MovieOption    @relation(fields: [optionId], references: [id])
+  user      User           @relation(fields: [userId], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([optionId])
 }
 
 // âââ BUNDLE âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -435,4 +682,3 @@ model PrizeVoucher {
   @@index([userId])
   @@index([code])
 }
-

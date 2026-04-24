@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "skills": {
+    "committing-code": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "d391066d547db142085927c1a8c75ee88cbe61b98488e3eedb00fb256b6efced"
+    },
+    "deploying-to-azure": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "a499c4f85fd48f0b37f1f5e0f689044949d4dbfb73cc4830d27cfe86bd293ed6"
+    },
+    "implementing-chat-streaming": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "de7a33711cd37c13c463fbdac2303205e5afb86c7f20f24076816e7d822b3846"
+    },
+    "planning-features": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "125f0620e576a5561f458d6b606b741f06c1472385cc14b5e6c88cfdab91dd71"
+    },
+    "researching-azure-ai-sdk": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "3630c01df6c9d4045b5e5eda739ecc699420d1721f02234d3c2f49c05bc21590"
+    },
+    "reviewing-documentation": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "f45a994292bcfce009b2357343327c367cdf202802f832c16e976f48299c1e8c"
+    },
+    "syncing-mcp-servers": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "8a4e7294c18dcc6c8f9274dedfffc21e0144e68d339484039173ea67cad8dae4"
+    },
+    "testing-cli-compatibility": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "40b35c3f2080e7795c631e3a9b763d4737b18154da62da5a1a709318c466a12e"
+    },
+    "testing-with-playwright": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "4d74c17ede6b0b742c4fc9af0821939a060a315db8cd2dfce121a83967a32c41"
+    },
+    "triaging-issues": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "fadce49e5f9b9b77707068401f496bbfee6c403829f425cc62fd15c23505705e"
+    },
+    "troubleshooting-authentication": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "1f21739951b8e8e3fa4233c1be57b784fac13f0b925628ffd865cfbd073f081c"
+    },
+    "understanding-architecture": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "d93e26ed51730d373c51a4a425937484a3fb1c795cc257642e1f250cb4b71b92"
+    },
+    "validating-deployments": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "d2fab0f3341c1dbff8a57f69db35dfec295b72780f48df0205bdadf22fdd9f84"
+    },
+    "validating-local-setup": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "43643b6b21989bd49d5ffd9907af8387ad5ed536d9d7a56f8608ba38d372bc10"
+    },
+    "validating-ui-features": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "aba6cf3f6809633c387832e29b6abb024c33f9eed586d85387e53fa72592c0ca"
+    },
+    "writing-bicep-templates": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "c02f9ffc59b70aaa68b2d20ac08397caf786a3713c8d4ba1cb4fdc863cb969ae"
+    },
+    "writing-csharp-code": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "62c6ed749c3dcf251caf5d9e7b35c61cb945e7ad74a223e4be3df3405ddc8e5c"
+    },
+    "writing-typescript-code": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "8a4fde947ce5e8fdb113b1ae39ac583ef5c74d0d77998b37d015507835b7bbee"
+    },
+    "writing-unit-tests-csharp": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "9a1fbc4de6ed9293e0e232a27a383bbd137ad9755ec6791e824e0ee41af8351f"
+    },
+    "writing-unit-tests-typescript": {
+      "source": "microsoft-foundry/foundry-agent-webapp",
+      "sourceType": "github",
+      "computedHash": "9b52829d2f2ecbd81e25d9769614e3cd9b9738a498f9c70e917c3b84f3c9d9fa"
+    }
+  }
+}

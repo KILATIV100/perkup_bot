@@ -240,6 +240,22 @@ export default async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, location: { ...location, posterToken: undefined } })
   })
 
+  app.put('/locations/:slug/poster-token', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const slug = String(req.params.slug)
+    const body = z.object({ token: z.string().trim().min(1) }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid token' })
+
+    try {
+      const location = await prisma.location.update({
+        where: { slug },
+        data: { posterToken: body.data.token },
+      })
+      return reply.send({ success: true, location: { ...location, posterToken: undefined } })
+    } catch {
+      return reply.status(404).send({ success: false, error: 'Location not found' })
+    }
+  })
+
   app.get('/menu/:locationSlug', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const locationSlug = String(req.params.locationSlug)
     const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
@@ -630,6 +646,12 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "hasPrinter" BOOLEAN NOT NULL DEFAULT false', 'Location.hasPrinter')
     await run('ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "printerIp" TEXT', 'Location.printerIp')
     await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "categoryOrder" INTEGER NOT NULL DEFAULT 0', 'Product.categoryOrder')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "posterImageUrl" TEXT', 'Product.posterImageUrl')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isNew" BOOLEAN NOT NULL DEFAULT false', 'Product.isNew')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isTop" BOOLEAN NOT NULL DEFAULT false', 'Product.isTop')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isSeasonal" BOOLEAN NOT NULL DEFAULT false', 'Product.isSeasonal')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isRecommended" BOOLEAN NOT NULL DEFAULT false', 'Product.isRecommended')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isHiddenInApp" BOOLEAN NOT NULL DEFAULT false', 'Product.isHiddenInApp')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "birthDate" TIMESTAMP', 'User.birthDate')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastBirthdayBonus" INTEGER', 'User.lastBirthdayBonus')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "referredById" INTEGER', 'User.referredById')
@@ -642,6 +664,124 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notifSpin" BOOLEAN NOT NULL DEFAULT true', 'User.notifSpin')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notifWinback" BOOLEAN NOT NULL DEFAULT true', 'User.notifWinback')
     await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "radioGenre" TEXT DEFAULT 'all'`, 'User.radioGenre')
+    await run(`DO $$ BEGIN
+      CREATE TYPE "PendingLoyaltyStatus" AS ENUM ('PENDING','CLAIMED','EXPIRED');
+    EXCEPTION
+      WHEN duplicate_object THEN null;
+    END $$;`, 'Enum PendingLoyaltyStatus')
+    await run(`CREATE TABLE IF NOT EXISTS "PendingLoyaltyEvent" (
+      "id" TEXT PRIMARY KEY,
+      "phone" TEXT NOT NULL,
+      "locationId" INTEGER,
+      "posterAccountId" TEXT,
+      "posterTransactionId" TEXT NOT NULL,
+      "totalAmount" INTEGER NOT NULL,
+      "points" INTEGER NOT NULL,
+      "status" "PendingLoyaltyStatus" NOT NULL DEFAULT 'PENDING',
+      "expiresAt" TIMESTAMP,
+      "claimedByUserId" INTEGER,
+      "claimedAt" TIMESTAMP,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table PendingLoyaltyEvent')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "PendingLoyaltyEvent_posterAccountId_posterTransactionId_key" ON "PendingLoyaltyEvent" ("posterAccountId","posterTransactionId")', 'PendingLoyaltyEvent unique')
+    await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_phone_idx" ON "PendingLoyaltyEvent" ("phone")', 'PendingLoyaltyEvent phone idx')
+    await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_status_idx" ON "PendingLoyaltyEvent" ("status")', 'PendingLoyaltyEvent status idx')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityChannel" AS ENUM ('GENERAL','BOARD_GAMES','MOVIE_NIGHTS'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityChannel')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityMessageStatus" AS ENUM ('VISIBLE','HIDDEN','DELETED_BY_USER','DELETED_BY_ADMIN'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityMessageStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "BoardGameDifficulty" AS ENUM ('EASY','MEDIUM','HARD'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum BoardGameDifficulty')
+    await run(`DO $$ BEGIN CREATE TYPE "BoardGameMeetupStatus" AS ENUM ('OPEN','FULL','CANCELLED','COMPLETED'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum BoardGameMeetupStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "MeetupParticipantStatus" AS ENUM ('JOINED','CANCELLED','NO_SHOW'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum MeetupParticipantStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityEventType" AS ENUM ('MOVIE_NIGHT','BOARD_GAME_NIGHT','MEETUP','OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityEventType')
+    await run(`DO $$ BEGIN CREATE TYPE "CommunityEventStatus" AS ENUM ('DRAFT','PUBLISHED','CANCELLED','COMPLETED'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum CommunityEventStatus')
+    await run(`DO $$ BEGIN CREATE TYPE "EventParticipantStatus" AS ENUM ('GOING','MAYBE','CANCELLED','ATTENDED','NO_SHOW'); EXCEPTION WHEN duplicate_object THEN null; END $$;`, 'Enum EventParticipantStatus')
+    await run(`CREATE TABLE IF NOT EXISTS "CommunityMessage" (
+      "id" TEXT PRIMARY KEY,
+      "userId" INTEGER NOT NULL,
+      "channel" "CommunityChannel" NOT NULL,
+      "text" TEXT NOT NULL,
+      "status" "CommunityMessageStatus" NOT NULL DEFAULT 'VISIBLE',
+      "replyToId" TEXT,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table CommunityMessage')
+    await run('CREATE INDEX IF NOT EXISTS "CommunityMessage_channel_createdAt_idx" ON "CommunityMessage" ("channel","createdAt")', 'CommunityMessage channel+createdAt idx')
+    await run('CREATE INDEX IF NOT EXISTS "CommunityMessage_userId_idx" ON "CommunityMessage" ("userId")', 'CommunityMessage userId idx')
+    await run('CREATE INDEX IF NOT EXISTS "CommunityMessage_status_idx" ON "CommunityMessage" ("status")', 'CommunityMessage status idx')
+    await run(`CREATE TABLE IF NOT EXISTS "BoardGame" (
+      "id" TEXT PRIMARY KEY,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "imageUrl" TEXT,
+      "minPlayers" INTEGER,
+      "maxPlayers" INTEGER,
+      "avgDurationMin" INTEGER,
+      "difficulty" "BoardGameDifficulty",
+      "isAvailable" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table BoardGame')
+    await run(`CREATE TABLE IF NOT EXISTS "BoardGameMeetup" (
+      "id" TEXT PRIMARY KEY,
+      "gameId" TEXT,
+      "creatorId" INTEGER NOT NULL,
+      "locationId" INTEGER,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "startsAt" TIMESTAMP NOT NULL,
+      "maxPlayers" INTEGER NOT NULL,
+      "status" "BoardGameMeetupStatus" NOT NULL DEFAULT 'OPEN',
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table BoardGameMeetup')
+    await run(`CREATE TABLE IF NOT EXISTS "BoardGameMeetupParticipant" (
+      "id" TEXT PRIMARY KEY,
+      "meetupId" TEXT NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "status" "MeetupParticipantStatus" NOT NULL DEFAULT 'JOINED',
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table BoardGameMeetupParticipant')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "BoardGameMeetupParticipant_meetupId_userId_key" ON "BoardGameMeetupParticipant" ("meetupId","userId")', 'BoardGameMeetupParticipant unique')
+    await run(`CREATE TABLE IF NOT EXISTS "CommunityEvent" (
+      "id" TEXT PRIMARY KEY,
+      "type" "CommunityEventType" NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "imageUrl" TEXT,
+      "locationId" INTEGER,
+      "startsAt" TIMESTAMP NOT NULL,
+      "endsAt" TIMESTAMP,
+      "capacity" INTEGER,
+      "status" "CommunityEventStatus" NOT NULL DEFAULT 'PUBLISHED',
+      "createdById" INTEGER,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table CommunityEvent')
+    await run(`CREATE TABLE IF NOT EXISTS "CommunityEventParticipant" (
+      "id" TEXT PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "status" "EventParticipantStatus" NOT NULL DEFAULT 'GOING',
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table CommunityEventParticipant')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "CommunityEventParticipant_eventId_userId_key" ON "CommunityEventParticipant" ("eventId","userId")', 'CommunityEventParticipant unique')
+    await run(`CREATE TABLE IF NOT EXISTS "MovieOption" (
+      "id" TEXT PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "posterUrl" TEXT,
+      "sortOrder" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table MovieOption')
+    await run(`CREATE TABLE IF NOT EXISTS "MovieVote" (
+      "id" TEXT PRIMARY KEY,
+      "eventId" TEXT NOT NULL,
+      "optionId" TEXT NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table MovieVote')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "MovieVote_eventId_userId_key" ON "MovieVote" ("eventId","userId")', 'MovieVote unique')
 
     return reply.send({ success: true, results })
   })
@@ -652,6 +792,43 @@ export default async function adminRoutes(app: FastifyInstance) {
     const kronaCount = krona ? await prisma.product.count({ where: { locationId: krona.id } }) : 0
     const pryCount = pryozerny ? await prisma.product.count({ where: { locationId: pryozerny.id } }) : 0
     return reply.send({ success: true, kronaCount, pryCount })
+  })
+
+  app.get('/loyalty/pending', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      status: z.enum(['PENDING', 'CLAIMED', 'EXPIRED']).optional(),
+      phone: z.string().trim().min(3).optional(),
+      locationId: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(100),
+    }).safeParse(req.query)
+
+    const where: any = {}
+    if (query.success && query.data.status) where.status = query.data.status
+    if (query.success && query.data.phone) where.phone = { contains: query.data.phone }
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const pending = await prisma.pendingLoyaltyEvent.findMany({
+      where,
+      include: { location: { select: { id: true, slug: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: query.success ? query.data.limit : 100,
+    })
+
+    return reply.send({
+      success: true,
+      items: pending.map((item: any) => ({
+        id: item.id,
+        phone: item.phone,
+        location: item.location,
+        posterAccountId: item.posterAccountId,
+        posterTransactionId: item.posterTransactionId,
+        totalAmount: item.totalAmount,
+        points: item.points,
+        status: item.status,
+        createdAt: item.createdAt,
+        claimedAt: item.claimedAt,
+      })),
+    })
   })
 
   // POST /api/admin/broadcast — called from bot (OWNER) via BOT_SECRET header.
@@ -671,9 +848,12 @@ export default async function adminRoutes(app: FastifyInstance) {
     }).safeParse(req.body)
     if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
 
-    const where: any = {}
-    if (body.data.filter === 'silver') where.points = { gte: 300 }
-    else if (body.data.filter === 'gold') where.points = { gte: 1000 }
+    const where: any = {
+      isActive: true,
+      notifSpin: true,
+    }
+    if (body.data.filter === 'silver') where.level = { in: ['Silver', 'Gold', 'Platinum'] }
+    else if (body.data.filter === 'gold') where.level = { in: ['Gold', 'Platinum'] }
 
     const users = await prisma.user.findMany({
       where,
@@ -692,6 +872,7 @@ export default async function adminRoutes(app: FastifyInstance) {
           body: JSON.stringify({ chat_id: Number(u.telegramId), text: body.data.text, parse_mode: 'Markdown' }),
         })
         if (res.ok) sent += 1
+        await new Promise((resolve) => setTimeout(resolve, 50))
       } catch (err) {
         console.error('[broadcast] send failed:', (err as Error).message)
       }
