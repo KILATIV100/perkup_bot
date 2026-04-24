@@ -89,6 +89,30 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
     })
   })
 
+  app.get('/referral', { preHandler: requireAuth }, async (req: any, reply: any) => {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true },
+    })
+    if (!user) return reply.status(404).send({ success: false, error: 'Not found' })
+
+    const invitedCount = await prisma.user.count({
+      where: { referredById: user.id },
+    })
+
+    const referralCode = `ref_${user.id}`
+    const referralLink = `https://t.me/${process.env.BOT_USERNAME || 'perkupbot'}?start=${referralCode}`
+
+    return reply.send({
+      success: true,
+      referralCode,
+      referralLink,
+      invitedCount,
+      bonusForFriend: 20,
+      bonusForReferrer: 20,
+    })
+  })
+
   app.post('/spin', { preHandler: requireAuth }, async (req: any, reply: any) => {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } })
     if (!user) return reply.status(404).send({ success: false, error: 'Not found' })

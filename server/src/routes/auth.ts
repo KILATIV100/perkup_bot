@@ -10,6 +10,66 @@ const loginSchema = z.object({
 })
 
 export default async function authRoutes(app: FastifyInstance) {
+  async function applyReferralBonus(userId: number, referrerId: number) {
+    if (userId === referrerId) {
+      return { success: false as const, reason: 'self_referral' }
+    }
+
+    const [user, referrer] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { id: true, referredById: true } }),
+      prisma.user.findUnique({ where: { id: referrerId }, select: { id: true } }),
+    ])
+
+    if (!user || !referrer) {
+      return { success: false as const, reason: 'not_found' }
+    }
+
+    if (user.referredById) {
+      return { success: false as const, reason: 'already_set' }
+    }
+
+    const newUserBonus = 20
+    const referrerBonus = 20
+
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: userId, referredById: null },
+        data: { referredById: referrerId, points: { increment: newUserBonus } },
+      })
+
+      if (updated.count === 0) {
+        throw new Error('ALREADY_SET')
+      }
+
+      await tx.user.update({
+        where: { id: referrerId },
+        data: { points: { increment: referrerBonus } },
+      })
+
+      await tx.pointsTransaction.create({
+        data: {
+          userId,
+          amount: newUserBonus,
+          type: 'REFERRAL',
+          description: 'Реферальний бонус (новий юзер)',
+          idempotencyKey: `ref-new-${userId}`,
+        },
+      })
+
+      await tx.pointsTransaction.create({
+        data: {
+          userId: referrerId,
+          amount: referrerBonus,
+          type: 'REFERRAL',
+          description: 'Реферальний бонус (запросив друга)',
+          idempotencyKey: `ref-referrer-${userId}`,
+        },
+      })
+    })
+
+    return { success: true as const }
+  }
+
   async function claimPendingLoyaltyEvents(userId: number, phone: string) {
     const pending = await prisma.pendingLoyaltyEvent.findMany({
       where: { phone, status: 'PENDING' },
@@ -212,25 +272,17 @@ export default async function authRoutes(app: FastifyInstance) {
         lastName: tgUser.last_name || null,
         username: tgUser.username || null,
         language: tgUser.language_code || 'uk',
-        referredById: referredById || null,
       },
     })
 
-    // Give referral bonus to new user (5 points)
-    if (referredById && user.createdAt.getTime() > Date.now() - 5000) {
-      await prisma.pointsTransaction.create({
-        data: {
-          userId: user.id,
-          amount: 5,
-          type: 'REFERRAL',
-          description: 'Бонус за реєстрацію за реферальним посиланням',
-          idempotencyKey: `referral-new-${user.id}`,
-        },
-      })
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { points: { increment: 5 } },
-      })
+    if (referredById) {
+      try {
+        await applyReferralBonus(user.id, referredById)
+      } catch (error) {
+        if (!(error instanceof Error && error.message === 'ALREADY_SET')) {
+          throw error
+        }
+      }
     }
 
     // Generate JWT
@@ -314,46 +366,19 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.send({ success: false, reason: 'self_referral' })
     }
 
-    const user = await prisma.user.findUnique({ where: { telegramId } })
-    const referrer = await prisma.user.findUnique({ where: { telegramId: referrerTelegramId } })
-    if (!user || !referrer || user.referredById) {
-      return reply.send({ success: false, reason: 'already_set' })
+    const user = await prisma.user.findUnique({ where: { telegramId }, select: { id: true } })
+    const referrer = await prisma.user.findUnique({ where: { telegramId: referrerTelegramId }, select: { id: true } })
+    if (!user || !referrer) {
+      return reply.send({ success: false, reason: 'not_found' })
     }
 
-    const newUserBonus = 20
-    const referrerBonus = 20
-
     try {
-      await prisma.$transaction([
-        prisma.user.update({
-          where: { id: user.id },
-          data: { referredById: referrer.id, points: { increment: newUserBonus } },
-        }),
-        prisma.user.update({
-          where: { id: referrer.id },
-          data: { points: { increment: referrerBonus } },
-        }),
-        prisma.pointsTransaction.create({
-          data: {
-            userId: user.id,
-            amount: newUserBonus,
-            type: 'REFERRAL',
-            description: '\u0420\u0435\u0444\u0435\u0440\u0430\u043b\u044c\u043d\u0438\u0439 \u0431\u043e\u043d\u0443\u0441 (\u043d\u043e\u0432\u0438\u0439 \u044e\u0437\u0435\u0440)',
-            idempotencyKey: 'ref-new-' + user.id,
-          },
-        }),
-        prisma.pointsTransaction.create({
-          data: {
-            userId: referrer.id,
-            amount: referrerBonus,
-            type: 'REFERRAL',
-            description: '\u0420\u0435\u0444\u0435\u0440\u0430\u043b\u044c\u043d\u0438\u0439 \u0431\u043e\u043d\u0443\u0441 (\u0437\u0430\u043f\u0440\u043e\u0441\u0438\u0432 \u0434\u0440\u0443\u0433\u0430)',
-            idempotencyKey: 'ref-referrer-' + user.id,
-          },
-        }),
-      ])
-      return reply.send({ success: true })
+      const result = await applyReferralBonus(user.id, referrer.id)
+      return reply.send(result)
     } catch (error) {
+      if (error instanceof Error && error.message === 'ALREADY_SET') {
+        return reply.send({ success: false, reason: 'already_set' })
+      }
       return reply.status(500).send({ success: false, reason: (error as Error).message })
     }
   })
