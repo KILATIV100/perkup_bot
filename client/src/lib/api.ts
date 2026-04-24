@@ -82,6 +82,12 @@ export const loyaltyApi = {
 
 export const mediaUrl = (fileId: string) => `${BASE_URL}/api/media/${fileId}`
 
+export const shiftsApi = {
+  getActive: () => api.get('/api/shifts/active'),
+  getHistory: (params?: { page?: number; locationId?: number }) => api.get('/api/shifts/history', { params }),
+  getAnalytics: (params?: { days?: number }) => api.get('/api/shifts/analytics', { params }),
+}
+
 export const aiApi = {
   weatherMenu: (locationSlug?: string) => api.get('/api/ai/weather-menu', { params: { locationSlug } }),
   cardOfDay: () => api.get('/api/ai/card-of-day'),
