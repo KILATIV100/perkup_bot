@@ -49,6 +49,12 @@ enum TransactionType {
   ADMIN
 }
 
+enum PendingLoyaltyStatus {
+  PENDING
+  CLAIMED
+  EXPIRED
+}
+
 // âââ USER âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 model User {
@@ -91,6 +97,7 @@ model User {
   gameSessions        GameSession[]
   tips                Tip[]
   reviews             Review[]
+  claimedPendingLoyaltyEvents PendingLoyaltyEvent[]
 
   @@index([telegramId])
   @@index([role])
@@ -131,6 +138,7 @@ model Location {
   shifts              Shift[]
   workingHours        WorkingHours[]
   reviews             Review[]
+  pendingLoyaltyEvents PendingLoyaltyEvent[]
 
   @@index([slug])
 }
@@ -160,6 +168,12 @@ model Product {
   category        String
   telegramFileId  String?
   imageUrl        String?
+  posterImageUrl  String?
+  isNew           Boolean  @default(false)
+  isTop           Boolean  @default(false)
+  isSeasonal      Boolean  @default(false)
+  isRecommended   Boolean  @default(false)
+  isHiddenInApp   Boolean  @default(false)
   calories        Int?
   volume          String?
   allergens       String[] @default([])
@@ -179,6 +193,29 @@ model Product {
   @@index([locationId, category, isAvailable])
   @@index([locationId, ordersCount])
   @@unique([locationId, posterProductId])
+}
+
+model PendingLoyaltyEvent {
+  id                 String               @id @default(cuid())
+  phone              String
+  locationId         Int?
+  posterAccountId    String?
+  posterTransactionId String
+  totalAmount        Int
+  points             Int
+  status             PendingLoyaltyStatus @default(PENDING)
+  expiresAt          DateTime?
+  claimedByUserId    Int?
+  claimedAt          DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  location           Location?            @relation(fields: [locationId], references: [id])
+  claimedByUser      User?                @relation(fields: [claimedByUserId], references: [id])
+
+  @@unique([posterAccountId, posterTransactionId])
+  @@index([phone])
+  @@index([status])
 }
 
 // âââ BUNDLE âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -435,4 +472,3 @@ model PrizeVoucher {
   @@index([userId])
   @@index([code])
 }
-

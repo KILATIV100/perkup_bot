@@ -240,6 +240,22 @@ export default async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, location: { ...location, posterToken: undefined } })
   })
 
+  app.put('/locations/:slug/poster-token', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const slug = String(req.params.slug)
+    const body = z.object({ token: z.string().trim().min(1) }).safeParse(req.body)
+    if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid token' })
+
+    try {
+      const location = await prisma.location.update({
+        where: { slug },
+        data: { posterToken: body.data.token },
+      })
+      return reply.send({ success: true, location: { ...location, posterToken: undefined } })
+    } catch {
+      return reply.status(404).send({ success: false, error: 'Location not found' })
+    }
+  })
+
   app.get('/menu/:locationSlug', { preHandler: adminOnly }, async (req: any, reply: any) => {
     const locationSlug = String(req.params.locationSlug)
     const location = await prisma.location.findUnique({ where: { slug: locationSlug } })
@@ -630,6 +646,12 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "hasPrinter" BOOLEAN NOT NULL DEFAULT false', 'Location.hasPrinter')
     await run('ALTER TABLE "Location" ADD COLUMN IF NOT EXISTS "printerIp" TEXT', 'Location.printerIp')
     await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "categoryOrder" INTEGER NOT NULL DEFAULT 0', 'Product.categoryOrder')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "posterImageUrl" TEXT', 'Product.posterImageUrl')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isNew" BOOLEAN NOT NULL DEFAULT false', 'Product.isNew')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isTop" BOOLEAN NOT NULL DEFAULT false', 'Product.isTop')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isSeasonal" BOOLEAN NOT NULL DEFAULT false', 'Product.isSeasonal')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isRecommended" BOOLEAN NOT NULL DEFAULT false', 'Product.isRecommended')
+    await run('ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "isHiddenInApp" BOOLEAN NOT NULL DEFAULT false', 'Product.isHiddenInApp')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "birthDate" TIMESTAMP', 'User.birthDate')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastBirthdayBonus" INTEGER', 'User.lastBirthdayBonus')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "referredById" INTEGER', 'User.referredById')
@@ -642,6 +664,29 @@ export default async function adminRoutes(app: FastifyInstance) {
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notifSpin" BOOLEAN NOT NULL DEFAULT true', 'User.notifSpin')
     await run('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notifWinback" BOOLEAN NOT NULL DEFAULT true', 'User.notifWinback')
     await run(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "radioGenre" TEXT DEFAULT 'all'`, 'User.radioGenre')
+    await run(`DO $$ BEGIN
+      CREATE TYPE "PendingLoyaltyStatus" AS ENUM ('PENDING','CLAIMED','EXPIRED');
+    EXCEPTION
+      WHEN duplicate_object THEN null;
+    END $$;`, 'Enum PendingLoyaltyStatus')
+    await run(`CREATE TABLE IF NOT EXISTS "PendingLoyaltyEvent" (
+      "id" TEXT PRIMARY KEY,
+      "phone" TEXT NOT NULL,
+      "locationId" INTEGER,
+      "posterAccountId" TEXT,
+      "posterTransactionId" TEXT NOT NULL,
+      "totalAmount" INTEGER NOT NULL,
+      "points" INTEGER NOT NULL,
+      "status" "PendingLoyaltyStatus" NOT NULL DEFAULT 'PENDING',
+      "expiresAt" TIMESTAMP,
+      "claimedByUserId" INTEGER,
+      "claimedAt" TIMESTAMP,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    )`, 'Table PendingLoyaltyEvent')
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS "PendingLoyaltyEvent_posterAccountId_posterTransactionId_key" ON "PendingLoyaltyEvent" ("posterAccountId","posterTransactionId")', 'PendingLoyaltyEvent unique')
+    await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_phone_idx" ON "PendingLoyaltyEvent" ("phone")', 'PendingLoyaltyEvent phone idx')
+    await run('CREATE INDEX IF NOT EXISTS "PendingLoyaltyEvent_status_idx" ON "PendingLoyaltyEvent" ("status")', 'PendingLoyaltyEvent status idx')
 
     return reply.send({ success: true, results })
   })
@@ -652,6 +697,43 @@ export default async function adminRoutes(app: FastifyInstance) {
     const kronaCount = krona ? await prisma.product.count({ where: { locationId: krona.id } }) : 0
     const pryCount = pryozerny ? await prisma.product.count({ where: { locationId: pryozerny.id } }) : 0
     return reply.send({ success: true, kronaCount, pryCount })
+  })
+
+  app.get('/loyalty/pending', { preHandler: adminOnly }, async (req: any, reply: any) => {
+    const query = z.object({
+      status: z.enum(['PENDING', 'CLAIMED', 'EXPIRED']).optional(),
+      phone: z.string().trim().min(3).optional(),
+      locationId: z.coerce.number().int().positive().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(100),
+    }).safeParse(req.query)
+
+    const where: any = {}
+    if (query.success && query.data.status) where.status = query.data.status
+    if (query.success && query.data.phone) where.phone = { contains: query.data.phone }
+    if (query.success && query.data.locationId) where.locationId = query.data.locationId
+
+    const pending = await prisma.pendingLoyaltyEvent.findMany({
+      where,
+      include: { location: { select: { id: true, slug: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: query.success ? query.data.limit : 100,
+    })
+
+    return reply.send({
+      success: true,
+      items: pending.map((item: any) => ({
+        id: item.id,
+        phone: item.phone,
+        location: item.location,
+        posterAccountId: item.posterAccountId,
+        posterTransactionId: item.posterTransactionId,
+        totalAmount: item.totalAmount,
+        points: item.points,
+        status: item.status,
+        createdAt: item.createdAt,
+        claimedAt: item.claimedAt,
+      })),
+    })
   })
 
   // POST /api/admin/broadcast — called from bot (OWNER) via BOT_SECRET header.
@@ -671,9 +753,12 @@ export default async function adminRoutes(app: FastifyInstance) {
     }).safeParse(req.body)
     if (!body.success) return reply.status(400).send({ success: false, error: 'Invalid data' })
 
-    const where: any = {}
-    if (body.data.filter === 'silver') where.points = { gte: 300 }
-    else if (body.data.filter === 'gold') where.points = { gte: 1000 }
+    const where: any = {
+      isActive: true,
+      notifSpin: true,
+    }
+    if (body.data.filter === 'silver') where.level = { in: ['Silver', 'Gold', 'Platinum'] }
+    else if (body.data.filter === 'gold') where.level = { in: ['Gold', 'Platinum'] }
 
     const users = await prisma.user.findMany({
       where,
@@ -692,6 +777,7 @@ export default async function adminRoutes(app: FastifyInstance) {
           body: JSON.stringify({ chat_id: Number(u.telegramId), text: body.data.text, parse_mode: 'Markdown' }),
         })
         if (res.ok) sent += 1
+        await new Promise((resolve) => setTimeout(resolve, 50))
       } catch (err) {
         console.error('[broadcast] send failed:', (err as Error).message)
       }

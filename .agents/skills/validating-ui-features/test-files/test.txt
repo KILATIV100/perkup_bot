@@ -1,0 +1,2 @@
+This is a plain text test file.
+It contains sample content for testing text/plain uploads.
