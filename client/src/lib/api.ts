@@ -59,7 +59,12 @@ export const ordersApi = {
   pay: (id: number, paymentId: string) => api.post(`/api/orders/${id}/pay`, { paymentId }),
   getMyOrders: (page = 1) => api.get('/api/orders', { params: { page } }),
   getById: (id: number) => api.get(`/api/orders/${id}`),
+  addTip: (id: number, amount: number) => api.post(`/api/orders/${id}/tip`, { amount }),
   cancel: (id: number) => api.delete(`/api/orders/${id}`),
+}
+
+export const promosApi = {
+  validate: (data: { code: string; locationId: number; subtotal: number }) => api.post('/api/orders/promo/validate', data),
 }
 
 export const loyaltyApi = {
@@ -87,9 +92,24 @@ export const aiApi = {
   claimChallenge: () => api.post('/api/ai/daily-challenge/claim'),
 }
 
+type GameFinishType =
+  | 'TIC_TAC_TOE'
+  | 'MEMORY'
+  | 'QUIZ'
+  | 'WORD_PUZZLE'
+  | 'PERKIE_CATCH'
+  | 'BARISTA_RUSH'
+  | 'MEMORY_COFFEE'
+  | 'PERKIE_JUMP'
+
 export const gameApi = {
   getStatus: () => api.get('/api/game/status'),
-  finishGame: (type: string, score: number) => api.post('/api/game/finish', { type, score }),
+  finish: (typeOrData: GameFinishType | { type: GameFinishType; score: number }, score?: number) => {
+    if (typeof typeOrData === 'string') {
+      return api.post('/api/game/finish', { type: typeOrData, score: score ?? 0 })
+    }
+    return api.post('/api/game/finish', typeOrData)
+  },
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
   getCoffeeJumpLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
