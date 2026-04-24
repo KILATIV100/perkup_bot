@@ -232,6 +232,50 @@ async function main() {
 
   console.log('✅ Bundles created')
 
+  // ─── COMMUNITY DEMO DATA ──────────────────────────────────────
+  const boardGames = [
+    { title: 'Catan', description: 'Класична стратегія про ресурси та торгівлю', minPlayers: 3, maxPlayers: 4, avgDurationMin: 90, difficulty: 'MEDIUM' as const },
+    { title: 'Dixit', description: 'Асоціативна гра з красивими ілюстраціями', minPlayers: 3, maxPlayers: 6, avgDurationMin: 35, difficulty: 'EASY' as const },
+    { title: 'Carcassonne', description: 'Будуємо середньовічні міста та дороги', minPlayers: 2, maxPlayers: 5, avgDurationMin: 45, difficulty: 'EASY' as const },
+    { title: 'Шахи', description: 'Класична дуельна стратегія', minPlayers: 2, maxPlayers: 2, avgDurationMin: 30, difficulty: 'HARD' as const },
+  ]
+
+  for (const game of boardGames) {
+    await prisma.boardGame.upsert({
+      where: { title: game.title },
+      update: game,
+      create: game,
+    })
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    const nextFriday = new Date()
+    nextFriday.setDate(nextFriday.getDate() + ((5 + 7 - nextFriday.getDay()) % 7 || 7))
+    nextFriday.setHours(19, 0, 0, 0)
+
+    const demoMovieNight = await prisma.communityEvent.create({
+      data: {
+        type: 'MOVIE_NIGHT',
+        title: 'Кіновечір у PerkUp',
+        description: 'Дивимось кіно, пʼємо каву, знайомимось.',
+        locationId: krona.id,
+        startsAt: nextFriday,
+        capacity: 24,
+        status: 'PUBLISHED',
+        movieOptions: {
+          create: [
+            { title: 'The Grand Budapest Hotel', sortOrder: 0 },
+            { title: 'Soul', sortOrder: 1 },
+            { title: 'Paddington', sortOrder: 2 },
+          ],
+        },
+      },
+    })
+    console.log('✅ Demo movie night created:', demoMovieNight.id)
+  }
+
+  console.log('✅ Community demo data created')
+
   // ─── OWNER USER ───────────────────────────────────────────────
   // Create owner account (update telegramId to your real one)
   const owner = await prisma.user.upsert({

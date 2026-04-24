@@ -3,13 +3,55 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { verifyTelegramInitData, verifyTelegramLoginWidget } from '../lib/telegram'
-import { normalizePhone } from '../lib/phone'
+import { normalizePhoneOrThrow } from '../lib/phone'
 
 const loginSchema = z.object({
   initData: z.string().min(1),
 })
 
 export default async function authRoutes(app: FastifyInstance) {
+  async function claimPendingLoyaltyEvents(userId: number, phone: string) {
+    const pending = await prisma.pendingLoyaltyEvent.findMany({
+      where: { phone, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    })
+    if (pending.length === 0) return 0
+
+    let claimedCount = 0
+    for (const event of pending) {
+      const idempotencyKey = `earn:pending:${event.id}`
+      try {
+        await prisma.$transaction([
+          prisma.pointsTransaction.create({
+            data: {
+              userId,
+              amount: event.points,
+              type: 'ORDER',
+              description: `Pending offline Poster #${event.posterTransactionId}`,
+              idempotencyKey,
+            },
+          }),
+          prisma.user.update({
+            where: { id: userId },
+            data: { points: { increment: event.points } },
+          }),
+          prisma.pendingLoyaltyEvent.update({
+            where: { id: event.id },
+            data: {
+              status: 'CLAIMED',
+              claimedByUserId: userId,
+              claimedAt: new Date(),
+            },
+          }),
+        ])
+        claimedCount += 1
+      } catch {
+        // idempotent skip
+      }
+    }
+    return claimedCount
+  }
 
   // DEV helper login for local/staging smoke tests outside Telegram WebApp.
   // Enabled only when explicitly allowed.
@@ -252,6 +294,70 @@ export default async function authRoutes(app: FastifyInstance) {
     })
   })
 
+  // POST /api/auth/bot-referral
+  app.post('/bot-referral', async (req: any, reply: any) => {
+    if (req.headers['x-bot-secret'] !== process.env.BOT_SECRET) {
+      return reply.status(403).send({ success: false })
+    }
+
+    const body = z.object({
+      telegramId: z.coerce.bigint(),
+      referrerTelegramId: z.coerce.bigint(),
+    }).safeParse(req.body)
+
+    if (!body.success) {
+      return reply.status(400).send({ success: false, reason: 'invalid_body' })
+    }
+
+    const { telegramId, referrerTelegramId } = body.data
+    if (telegramId === referrerTelegramId) {
+      return reply.send({ success: false, reason: 'self_referral' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { telegramId } })
+    const referrer = await prisma.user.findUnique({ where: { telegramId: referrerTelegramId } })
+    if (!user || !referrer || user.referredById) {
+      return reply.send({ success: false, reason: 'already_set' })
+    }
+
+    const newUserBonus = 20
+    const referrerBonus = 20
+
+    try {
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: user.id },
+          data: { referredById: referrer.id, points: { increment: newUserBonus } },
+        }),
+        prisma.user.update({
+          where: { id: referrer.id },
+          data: { points: { increment: referrerBonus } },
+        }),
+        prisma.pointsTransaction.create({
+          data: {
+            userId: user.id,
+            amount: newUserBonus,
+            type: 'REFERRAL',
+            description: '\u0420\u0435\u0444\u0435\u0440\u0430\u043b\u044c\u043d\u0438\u0439 \u0431\u043e\u043d\u0443\u0441 (\u043d\u043e\u0432\u0438\u0439 \u044e\u0437\u0435\u0440)',
+            idempotencyKey: 'ref-new-' + user.id,
+          },
+        }),
+        prisma.pointsTransaction.create({
+          data: {
+            userId: referrer.id,
+            amount: referrerBonus,
+            type: 'REFERRAL',
+            description: '\u0420\u0435\u0444\u0435\u0440\u0430\u043b\u044c\u043d\u0438\u0439 \u0431\u043e\u043d\u0443\u0441 (\u0437\u0430\u043f\u0440\u043e\u0441\u0438\u0432 \u0434\u0440\u0443\u0433\u0430)',
+            idempotencyKey: 'ref-referrer-' + user.id,
+          },
+        }),
+      ])
+      return reply.send({ success: true })
+    } catch (error) {
+      return reply.status(500).send({ success: false, reason: (error as Error).message })
+    }
+  })
+
   // GET /api/auth/me
   app.get('/me', {
     preHandler: async (req, reply) => {
@@ -322,7 +428,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (body.data.language) updateData.language = body.data.language
     if (body.data.phone) {
       try {
-        updateData.phone = normalizePhone(body.data.phone)
+        updateData.phone = normalizePhoneOrThrow(body.data.phone)
       } catch (error) {
         return reply.status(400).send({ success: false, error: (error as Error).message })
       }
@@ -352,6 +458,10 @@ export default async function authRoutes(app: FastifyInstance) {
       data: updateData,
     })
 
+    if (updateData.phone) {
+      await claimPendingLoyaltyEvents(req.user.id, updateData.phone)
+    }
+
     return reply.send({ success: true })
   })
 
@@ -379,7 +489,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (body.data.language !== undefined) data.language = body.data.language
     if (body.data.phone !== undefined) {
       try {
-        data.phone = body.data.phone ? normalizePhone(body.data.phone) : null
+        data.phone = body.data.phone ? normalizePhoneOrThrow(body.data.phone) : null
       } catch (error) {
         return reply.status(400).send({ success: false, error: (error as Error).message })
       }
@@ -405,6 +515,10 @@ export default async function authRoutes(app: FastifyInstance) {
         notifPromo: true,
       },
     })
+
+    if (data.phone) {
+      await claimPendingLoyaltyEvents(req.user.id, data.phone)
+    }
 
     return reply.send({ success: true, settings: user })
   })

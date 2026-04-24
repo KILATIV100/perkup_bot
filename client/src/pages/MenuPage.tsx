@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { menuApi } from '../lib/api'
@@ -24,6 +24,7 @@ export default function MenuPage() {
   const navigate = useNavigate()
   const { activeLocation } = useLocationStore()
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const { addItem, getTotalItems, clearIfDifferentLocation } = useCartStore()
   const totalItems = getTotalItems()
@@ -47,13 +48,19 @@ export default function MenuPage() {
     FAMILY_CAFE: t('header.familyCafe'),
   }
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const menuQuery = useQuery({
-    queryKey: ['menu', activeLocation?.slug, search],
+    queryKey: ['menu', activeLocation?.slug, debouncedSearch],
     enabled: !!activeLocation?.slug,
     queryFn: async () => {
-      const res = await menuApi.getMenu(activeLocation!.slug, search ? { search } : undefined)
+      const res = await menuApi.getMenu(activeLocation!.slug, debouncedSearch ? { search: debouncedSearch } : undefined)
       return res.data
     },
+    placeholderData: (previousData) => previousData,
   })
 
   const categories = useMemo<MenuCategory[]>(() => menuQuery.data?.categories || [], [menuQuery.data])

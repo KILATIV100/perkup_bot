@@ -50,4 +50,9 @@ export const adminApi = {
   syncLocation: (slug: string) => api.post(`/api/admin/sync/${slug}`),
   getMenuQrUrl: (locationSlug: string) => `${BASE_URL}/api/menu/${encodeURIComponent(locationSlug)}/qr.svg`,
   getPrintMenuUrl: (locationSlug: string) => `${BASE_URL}/api/menu/${encodeURIComponent(locationSlug)}/print`,
+  getCommunityMessages: (params?: { channel?: 'GENERAL' | 'BOARD_GAMES' | 'MOVIE_NIGHTS'; status?: string; limit?: number }) =>
+    api.get('/api/admin/community/messages', { params }),
+  hideCommunityMessage: (id: string) => api.patch(`/api/admin/community/messages/${id}/hide`),
+  getCommunityBoardGames: () => api.get('/api/admin/community/board-games'),
+  getCommunityEvents: () => api.get('/api/admin/community/events'),
 }

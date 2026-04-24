@@ -88,8 +88,23 @@ export const aiApi = {
 }
 
 export const gameApi = {
+  getStatus: () => api.get('/api/game/status'),
+  finish: (data: { type: 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'; score: number }) =>
+    api.post('/api/game/finish', data),
+  // Backward-compatible alias for legacy mini-games modules.
+  // Supports both finishGame({ type, score }) and finishGame(type, score).
+  finishGame: (
+    dataOrType:
+      | { type: 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP'; score: number }
+      | 'TIC_TAC_TOE' | 'PERKIE_CATCH' | 'BARISTA_RUSH' | 'MEMORY_COFFEE' | 'PERKIE_JUMP',
+    score?: number
+  ) => api.post('/api/game/finish', typeof dataOrType === 'string'
+    ? { type: dataOrType, score: Number(score || 0) }
+    : dataOrType),
   submitScore: (score: number) => api.post('/api/game/coffee-jump/score', { score }),
   getLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
+  // Backward-compatible alias for older callers.
+  getCoffeeJumpLeaderboard: () => api.get('/api/game/coffee-jump/leaderboard'),
   getMyStats: () => api.get('/api/game/coffee-jump/my-stats'),
 }
 
@@ -101,6 +116,28 @@ export const radioApi = {
   setGenre: (genre: string) => api.post('/api/radio/user-genre', { genre }),
 }
 
+export const communityApi = {
+  getChatMessages: (params: { channel: 'GENERAL' | 'BOARD_GAMES' | 'MOVIE_NIGHTS'; after?: string; limit?: number }) =>
+    api.get('/api/community/chat/messages', { params }),
+  postChatMessage: (data: { channel: 'GENERAL' | 'BOARD_GAMES' | 'MOVIE_NIGHTS'; text: string; replyToId?: string }) =>
+    api.post('/api/community/chat/messages', data),
+  deleteChatMessage: (id: string) => api.delete(`/api/community/chat/messages/${id}`),
+  getBoardGames: () => api.get('/api/community/board-games'),
+  getMeetups: (params?: { locationId?: number; date?: string; status?: 'OPEN' | 'FULL' | 'CANCELLED' | 'COMPLETED' }) =>
+    api.get('/api/community/board-game-meetups', { params }),
+  createMeetup: (data: { gameId?: string; locationId?: number; title: string; description?: string; startsAt: string; maxPlayers: number }) =>
+    api.post('/api/community/board-game-meetups', data),
+  joinMeetup: (id: string) => api.post(`/api/community/board-game-meetups/${id}/join`),
+  leaveMeetup: (id: string) => api.post(`/api/community/board-game-meetups/${id}/leave`),
+  cancelMeetup: (id: string) => api.post(`/api/community/board-game-meetups/${id}/cancel`),
+  getEvents: (params?: { type?: 'MOVIE_NIGHT' | 'BOARD_GAME_NIGHT' | 'MEETUP' | 'OTHER'; locationId?: number; upcoming?: boolean }) =>
+    api.get('/api/community/events', { params }),
+  getEventById: (id: string) => api.get(`/api/community/events/${id}`),
+  joinEvent: (id: string) => api.post(`/api/community/events/${id}/join`),
+  leaveEvent: (id: string) => api.post(`/api/community/events/${id}/leave`),
+  voteMovie: (id: string, optionId: string) => api.post(`/api/community/events/${id}/vote-movie`, { optionId }),
+}
+
 export const adminApi = {
   getDashboard: () => api.get('/api/admin/dashboard'),
   getUsers: (params?: { page?: number; role?: string; search?: string }) => api.get('/api/admin/users', { params }),
@@ -108,6 +145,7 @@ export const adminApi = {
   getOrders: (params?: { page?: number; status?: string; locationId?: number }) => api.get('/api/admin/orders', { params }),
   getLocations: () => api.get('/api/admin/locations'),
   updateLocation: (id: number, data: any) => api.patch(`/api/admin/locations/${id}`, data),
+  setLocationPosterToken: (slug: string, token: string) => api.put(`/api/admin/locations/${encodeURIComponent(slug)}/poster-token`, { token }),
   getMenu: (locationSlug: string) => api.get(`/api/admin/menu/${locationSlug}`),
   createCategory: (locationSlug: string, name: string) => api.post(`/api/admin/menu/${locationSlug}/categories`, { name }),
   renameCategory: (locationSlug: string, oldName: string, name: string) => api.patch(`/api/admin/menu/${locationSlug}/categories`, { oldName, name }),
