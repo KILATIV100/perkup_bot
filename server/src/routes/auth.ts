@@ -9,6 +9,9 @@ const loginSchema = z.object({
   initData: z.string().min(1),
 })
 
+const REFERRAL_BONUS_FOR_FRIEND = 20
+const REFERRAL_BONUS_FOR_REFERRER = 20
+
 export default async function authRoutes(app: FastifyInstance) {
   async function applyReferralBonus(userId: number, referrerId: number) {
     if (userId === referrerId) {
@@ -28,8 +31,8 @@ export default async function authRoutes(app: FastifyInstance) {
       return { success: false as const, reason: 'already_set' }
     }
 
-    const newUserBonus = 20
-    const referrerBonus = 20
+    const newUserBonus = REFERRAL_BONUS_FOR_FRIEND
+    const referrerBonus = REFERRAL_BONUS_FOR_REFERRER
 
     await prisma.$transaction(async (tx) => {
       const updated = await tx.user.updateMany({

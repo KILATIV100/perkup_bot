@@ -4,6 +4,8 @@ import crypto from 'crypto'
 import { getLevel, getLevelMultiplier, getNextLevel } from '../lib/loyalty'
 
 const BOT = process.env.BOT_TOKEN || ''
+const REFERRAL_BONUS_FOR_FRIEND = 20
+const REFERRAL_BONUS_FOR_REFERRER = 20
 
 async function tgSend(chatId: string, text: string) {
   if (!BOT) return
@@ -108,8 +110,8 @@ export default async function loyaltyRoutes(app: FastifyInstance) {
       referralCode,
       referralLink,
       invitedCount,
-      bonusForFriend: 20,
-      bonusForReferrer: 20,
+      bonusForFriend: REFERRAL_BONUS_FOR_FRIEND,
+      bonusForReferrer: REFERRAL_BONUS_FOR_REFERRER,
     })
   })
 
