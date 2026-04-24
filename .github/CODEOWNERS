@@ -1,0 +1,5 @@
+# Критичні файли - будь-яка зміна потребує review від власника
+client/src/pages/FunPage.tsx @KILATIV100
+client/src/lib/api.ts @KILATIV100
+client/src/games/ @KILATIV100
+.github/workflows/ @KILATIV100
