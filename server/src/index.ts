@@ -20,9 +20,12 @@ import posterWebhookRoutes from './routes/webhooks/poster'
 import aiRoutes from './routes/ai'
 import radioRoutes from './routes/radio'
 import gameRoutes from './routes/game'
+import communityRoutes from './routes/community'
+import adminCommunityRoutes from './routes/adminCommunity'
 import { schedulePosterSync, startPosterSyncWorker } from './workers/posterSync'
 import { scheduleReminderJobs, startReminderWorker } from './workers/reminders'
 import { syncAllLocations } from './services/poster'
+import { startCronJobs } from './cron'
 
 const app = Fastify({ logger: { level: 'info' }, ignoreTrailingSlash: true, ignoreDuplicateSlashes: true })
 
@@ -80,6 +83,8 @@ async function bootstrap() {
   await app.register(aiRoutes,            { prefix: '/api/ai' })
   await app.register(radioRoutes,         { prefix: '/api/radio' })
   await app.register(gameRoutes,          { prefix: '/api/game' })
+  await app.register(communityRoutes,     { prefix: '/api/community' })
+  await app.register(adminCommunityRoutes,{ prefix: '/api/admin/community' })
   app.setErrorHandler((error, _req, reply) => {
     if (error.statusCode === 429) return reply.status(429).send({ success: false, error: 'Too many requests' })
     if (error.statusCode && error.statusCode < 500) return reply.status(error.statusCode).send({ success: false, error: error.message })
@@ -106,6 +111,12 @@ async function bootstrap() {
     await scheduleReminderJobs()
     console.log('Reminder worker started')
   } catch (err) { console.error('Reminder worker error:', (err as Error).message) }
+
+  try {
+    startCronJobs()
+  } catch (err) {
+    console.error('Cron start error:', (err as Error).message)
+  }
 }
 
 process.on('SIGTERM', async () => { await app.close(); await prisma.$disconnect(); process.exit(0) })

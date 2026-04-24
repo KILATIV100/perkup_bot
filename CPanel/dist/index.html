@@ -2,102 +2,13 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#6B3A2A" />
-    <title>PerkUp ☕</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #3d1c02; font-family: system-ui, sans-serif; }
-
-      #splash {
-        position: fixed; inset: 0; z-index: 9999;
-        background: linear-gradient(135deg, #3d1c02 0%, #6b3a2a 50%, #c8973a 100%);
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        transition: opacity 0.5s ease;
-      }
-      #splash.hidden { opacity: 0; pointer-events: none; }
-
-      .splash-logo {
-        font-size: 72px; margin-bottom: 16px;
-        animation: pulse 1.5s ease-in-out infinite;
-      }
-      .splash-name {
-        font-size: 36px; font-weight: 800; color: #f5e6c8;
-        letter-spacing: -1px; margin-bottom: 8px;
-      }
-      .splash-tagline {
-        font-size: 15px; color: #d9a84e; margin-bottom: 48px;
-      }
-      .splash-loader {
-        width: 48px; height: 4px; background: rgba(255,255,255,0.2);
-        border-radius: 2px; overflow: hidden;
-      }
-      .splash-loader-bar {
-        height: 100%; background: #c8973a; border-radius: 2px;
-        animation: loading 2s ease-in-out infinite;
-      }
-      @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.1); }
-      }
-      @keyframes loading {
-        0% { width: 0%; }
-        50% { width: 70%; }
-        100% { width: 100%; }
-      }
-
-      #root { min-height: 100vh; background: #fdf6ed; }
-    </style>
-    <script type="module" crossorigin src="./assets/index-COAZWLpl.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/vendor-D9Ps02-h.js">
-    <link rel="modulepreload" crossorigin href="./assets/query-D_Sx5QyE.js">
-    <link rel="modulepreload" crossorigin href="./assets/motion-DDgj2GqC.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-06JRW1U3.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PerkUp CPanel</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☕</text></svg>" />
+    <script type="module" crossorigin src="./assets/index-BB9nytkr.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-6JU7nsRO.css">
   </head>
-  <body>
-    <div id="splash">
-      <div class="splash-logo">☕</div>
-      <div class="splash-name">PerkUp</div>
-      <div class="splash-tagline">Твоя улюблена кав'ярня</div>
-      <div class="splash-loader">
-        <div class="splash-loader-bar"></div>
-      </div>
-    </div>
-
+  <body class="bg-gray-50 min-h-screen">
     <div id="root"></div>
-
-    <script>
-      // Hide splash after app loads (max 3 sec)
-      window.__hideSplash = function() {
-        const splash = document.getElementById('splash')
-        if (splash) {
-          splash.classList.add('hidden')
-          setTimeout(() => splash.remove(), 500)
-        }
-      }
-      setTimeout(window.__hideSplash, 3000)
-
-      // If React doesn't render within 8 seconds, show debug info
-      setTimeout(function() {
-        var root = document.getElementById('root')
-        if (root && root.children.length === 0) {
-          root.innerHTML = '<div style="padding:24px;text-align:center;font-family:system-ui;color:#6b3a2a;">' +
-            '<h2 style="margin-bottom:12px;">⚠️ Помилка завантаження</h2>' +
-            '<p style="color:#888;font-size:14px;" id="err-msg">Додаток не зміг завантажитись. Перевірте консоль браузера (F12).</p>' +
-            '<button onclick="location.reload()" style="margin-top:16px;padding:8px 24px;background:#6b3a2a;color:white;border:none;border-radius:8px;cursor:pointer;">Оновити</button>' +
-            '</div>'
-        }
-      }, 8000)
-
-      // Catch unhandled JS errors and show them
-      window.onerror = function(msg, url, line, col, err) {
-        console.error('Global error:', msg, url, line, col, err)
-        var el = document.getElementById('err-msg')
-        if (el) el.textContent = 'Error: ' + msg
-      }
-    </script>
-
   </body>
 </html>

@@ -3,6 +3,7 @@ node_modules/
 .dist/
 dist/
 !CPanel/dist/
+build/
 .env
 .env.*
 !.env.example

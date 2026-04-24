@@ -112,6 +112,27 @@ function inviteKeyboard(userId: number) {
 bot.command('start', async (ctx) => {
   const firstName = ctx.from?.first_name || 'друже'
   const ref = ctx.match || ''
+  if (ref.startsWith('ref_') && ctx.from?.id) {
+    const referrerIdRaw = ref.replace('ref_', '')
+    const referrerId = Number(referrerIdRaw)
+    if (!Number.isNaN(referrerId) && referrerId > 0) {
+      try {
+        await fetch(`${API_URL}/api/auth/bot-referral`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-bot-secret': BOT_SECRET,
+          },
+          body: JSON.stringify({
+            telegramId: ctx.from.id,
+            referrerTelegramId: referrerId,
+          }),
+        })
+      } catch (err) {
+        console.error('[referral] bot-referral failed:', err)
+      }
+    }
+  }
   const refLine = ref.startsWith('ref_')
     ? `\n\n🎁 Тебе запросив друг! Після першого замовлення ви обоє отримаєте *+20 балів*.`
     : ''
