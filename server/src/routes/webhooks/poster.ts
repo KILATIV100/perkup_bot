@@ -43,18 +43,21 @@ function buildReceipt(orderId: number, locationName: string, itemLines: string, 
   ].join('\n')
 }
 
-async function findUserByPosterTransaction(subdomain: string, token: string, transactionId: number, log: any): Promise<{ userId: number; telegramId: bigint | null } | null> {
+async function findUserByPosterTransaction(subdomain: string, token: string, transactionId: number, log: any): Promise<{ normalizedPhone: string | null; userId: number | null; telegramId: bigint | null }> {
   try {
     const url = 'https://' + subdomain + '.joinposter.com/api/transactions.getTransactionById?token=' + token + '&transaction_id=' + transactionId
     const res = await fetch(url)
     const data = await res.json() as any
     log.info({ transactionId, keys: Object.keys(data?.response || {}) }, 'Poster transaction keys')
 
+    let normalizedPhone: string | null = null
     const phone = data?.response?.client_phone || data?.response?.phone
     if (phone) {
-      const normalized = normalizePhone(String(phone))
-      const user = await prisma.user.findFirst({ where: { phone: normalized } })
-      if (user) { log.info({ userId: user.id }, 'Found user by phone'); return { userId: user.id, telegramId: user.telegramId } }
+      normalizedPhone = normalizePhone(String(phone))
+      if (normalizedPhone) {
+        const user = await prisma.user.findFirst({ where: { phone: normalizedPhone } })
+        if (user) { log.info({ userId: user.id }, 'Found user by phone'); return { normalizedPhone, userId: user.id, telegramId: user.telegramId } }
+      }
     }
 
     const clientId = data?.response?.client_id
@@ -64,17 +67,19 @@ async function findUserByPosterTransaction(subdomain: string, token: string, tra
       const clientData = await clientRes.json() as any
       const clientPhone = clientData?.response?.phone
       if (clientPhone) {
-        const normalized = normalizePhone(String(clientPhone))
-        const user = await prisma.user.findFirst({ where: { phone: normalized } })
-        if (user) { log.info({ userId: user.id }, 'Found user by Poster client phone'); return { userId: user.id, telegramId: user.telegramId } }
+        normalizedPhone = normalizePhone(String(clientPhone))
+        if (normalizedPhone) {
+          const user = await prisma.user.findFirst({ where: { phone: normalizedPhone } })
+          if (user) { log.info({ userId: user.id }, 'Found user by Poster client phone'); return { normalizedPhone, userId: user.id, telegramId: user.telegramId } }
+        }
       }
     }
 
     log.info({ transactionId }, 'No PerkUp user found for this Poster transaction')
-    return null
+    return { normalizedPhone, userId: null, telegramId: null }
   } catch (e) {
     log.error({ err: String(e) }, 'findUserByPosterTransaction error')
-    return null
+    return { normalizedPhone: null, userId: null, telegramId: null }
   }
 }
 
@@ -82,7 +87,7 @@ async function awardOfflinePoints(userId: number, totalGrn: number, transactionI
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) return 0
 
-  const key = 'poster-offline-' + transactionId
+  const key = 'earn:offline-poster:' + locationName + ':' + transactionId
   const existing = await prisma.pointsTransaction.findFirst({ where: { idempotencyKey: key } })
   if (existing) { log.info({ transactionId }, 'Offline points already awarded'); return 0 }
 
@@ -194,9 +199,31 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
         if (totalGrn <= 0) { app.log.info({}, 'No total in offline transaction'); return }
 
         const userInfo = await findUserByPosterTransaction(p.account, location.posterToken, Number(p.object_id), app.log)
-        if (!userInfo) return
+        const pointsForCheck = calcEarnedPoints(totalGrn, 0)
+        if (pointsForCheck <= 0) return
 
-        const pts = await awardOfflinePoints(userInfo.userId, totalGrn, Number(p.object_id), location.name, app.log)
+        if (!userInfo.userId) {
+          if (!userInfo.normalizedPhone) {
+            app.log.warn({ posterTransactionId: p.object_id }, 'Poster transaction has no phone, skipping offline loyalty accrual')
+            return
+          }
+          await prisma.pendingLoyaltyEvent.upsert({
+            where: { posterAccountId_posterTransactionId: { posterAccountId: p.account, posterTransactionId: String(p.object_id) } },
+            update: {},
+            create: {
+              phone: userInfo.normalizedPhone,
+              locationId: location.id,
+              posterAccountId: p.account,
+              posterTransactionId: String(p.object_id),
+              totalAmount: Math.round(totalGrn * 100),
+              points: pointsForCheck,
+            },
+          })
+          app.log.info({ phone: userInfo.normalizedPhone, points: pointsForCheck }, 'Pending loyalty event created')
+          return
+        }
+
+        const pts = await awardOfflinePoints(userInfo.userId, totalGrn, Number(p.object_id), p.account, app.log)
         if (pts <= 0) return
 
         const updated = await prisma.user.findUnique({ where: { id: userInfo.userId } })

@@ -13,6 +13,11 @@ import OrderStatusPage from './pages/OrderStatusPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminPage from './pages/AdminPage'
 import LoginPage from './pages/LoginPage'
+import CommunityHomePage from './pages/community/CommunityHomePage'
+import CommunityChatPage from './pages/community/CommunityChatPage'
+import BoardGamesPage from './pages/community/BoardGamesPage'
+import MovieNightsPage from './pages/community/MovieNightsPage'
+import CommunityEventDetailsPage from './pages/community/CommunityEventDetailsPage'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Header from './components/Header'
@@ -52,6 +57,11 @@ export default function App() {
           <Route path="/cart" element={isAuthenticated ? <CartPage /> : <LoginPage />} />
           <Route path="/checkout" element={isAuthenticated ? <CheckoutPage /> : <LoginPage />} />
           <Route path="/orders/:id" element={isAuthenticated ? <OrderStatusPage /> : <LoginPage />} />
+          <Route path="/community" element={<CommunityHomePage />} />
+          <Route path="/community/chat" element={<CommunityChatPage />} />
+          <Route path="/community/board-games" element={<BoardGamesPage />} />
+          <Route path="/community/movie-nights" element={<MovieNightsPage />} />
+          <Route path="/community/events/:id" element={<CommunityEventDetailsPage />} />
           <Route path="*" element={<Navigate to="/menu" replace />} />
         </Routes>
       </main>

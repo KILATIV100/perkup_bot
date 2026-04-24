@@ -5,7 +5,7 @@ import { Prisma, OrderStatus } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { getLocationProfile } from '../lib/locationProfile'
-import { normalizePhone } from '../lib/phone'
+import { normalizePhoneOrThrow } from '../lib/phone'
 import { awardCompletedOrderLoyalty } from '../lib/orderRewards'
 import { createPosterIncomingOrder } from '../services/poster'
 
@@ -96,7 +96,7 @@ export default async function orderRoutes(app: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'Phone number is required for Poster preorder' })
       }
       try {
-        normalizedPhone = normalizePhone(requestedPhone)
+        normalizedPhone = normalizePhoneOrThrow(requestedPhone)
       } catch (error) {
         return reply.status(400).send({ success: false, error: (error as Error).message })
       }
