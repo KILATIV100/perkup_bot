@@ -161,25 +161,46 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
     })
     if (!location) { app.log.warn({ account: p.account }, 'Location not found'); return }
 
-    // TRANSACTION CLOSED = paid
-    if (p.object === 'transaction' && p.action === 'closed') {
-      app.log.info({ transactionId: p.object_id }, 'Transaction CLOSED = PAID')
+    // ─── INCOMING ORDER CLOSED = оплачено і завершено ────────────────
+    // Poster надсилає incoming_order:closed ОДНОЧАСНО з transaction:closed
+    // Це найнадійніший спосіб зв'язати замовлення (по posterOrderId)
+    if (p.object === 'incoming_order' && p.action === 'closed') {
+      const posterOrderId = Number(p.object_id)
+      app.log.info({ posterOrderId }, 'incoming_order CLOSED = order paid')
 
-      // First: check for online order
       const onlineOrder = await prisma.order.findFirst({
-        where: {
-          locationId: location.id,
-          status: { in: ['SENT_TO_POS', 'ACCEPTED', 'PREPARING', 'READY'] },
-        },
+        where: { posterOrderId, locationId: location.id },
         include: {
           user: true,
           items: { include: { product: { select: { name: true } }, bundle: { select: { name: true } } } },
         },
-        orderBy: { createdAt: 'desc' },
       })
 
       if (onlineOrder) {
         await completeOnlineOrder(onlineOrder, location.name, app.log)
+      } else {
+        app.log.info({ posterOrderId }, 'No online order found for this incoming_order:closed')
+      }
+      return
+    }
+
+    // ─── TRANSACTION CLOSED = для ОФЛАЙН замовлень ───────────────────
+    // Якщо прийшов transaction:closed але нема matching incoming_order → офлайн клієнт
+    if (p.object === 'transaction' && p.action === 'closed') {
+      app.log.info({ transactionId: p.object_id }, 'Transaction CLOSED - checking offline')
+
+      // Перевіряємо чи є активне онлайн замовлення — якщо є, incoming_order:closed вже його закриє
+      // Тому тут шукаємо тільки офлайн (без активних онлайн замовлень нещодавно)
+      const recentOnline = await prisma.order.findFirst({
+        where: {
+          locationId: location.id,
+          status: { in: ['SENT_TO_POS', 'ACCEPTED', 'PREPARING', 'READY'] },
+          createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+        },
+      })
+
+      if (recentOnline) {
+        app.log.info({ orderId: recentOnline.id }, 'Online order exists, skipping offline award (incoming_order:closed will handle it)')
         return
       }
 
@@ -254,7 +275,15 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
       return
     }
 
-    // INCOMING ORDER CHANGED = status change
+    // ─── INCOMING ORDER CHANGED = зміна статусу ──────────────────────
+    // Poster надсилає це при кожній зміні: прийняв бариста, готується, скасував
+    // Poster статуси incoming_order:
+    //   1 = нове (тільки що створено)
+    //   2 = прийнято баристою (accepted)
+    //   3 = готується (preparing)
+    //   4 = скасовано (CANCELLED) ← з webhook: changeorderstatus value=4
+    //   5 = готово (ready)
+    //   7 = видалено (deleted, теж cancelled)
     if (p.object === 'incoming_order' && p.action === 'changed') {
       if (!location.posterToken) return
 
@@ -263,18 +292,41 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
         where: { posterOrderId, locationId: location.id },
         include: { user: true },
       })
-      if (!order) { app.log.warn({ posterOrderId }, 'Order not found'); return }
+      if (!order) { app.log.warn({ posterOrderId }, 'Online order not found for incoming_order:changed'); return }
       if (['CANCELLED', 'COMPLETED'].includes(order.status)) return
 
+      // Перевіряємо data з webhook — чи є там changeorderstatus з value=4 (cancelled)
+      let cancelFromData = false
+      try {
+        const rawData = typeof p.data === 'string' ? JSON.parse(p.data) : p.data
+        const typeHistory = rawData?.transactions_history?.type_history
+        const newStatus = rawData?.transactions_history?.value
+        if (typeHistory === 'changeorderstatus' && newStatus === 4) {
+          cancelFromData = true
+        }
+      } catch {}
+
+      if (cancelFromData) {
+        await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
+        await tgSend(String(order.user.telegramId), [
+          '\u274c *\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e*',
+          '\u0411\u0430\u0440\u0438\u0441\u0442\u0430 \u0432\u0456\u0434\u043c\u0456\u043d\u0438\u0432 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f. \u042f\u043a\u0449\u043e \u0446\u0435 \u043f\u043e\u043c\u0438\u043b\u043a\u0430 \u2014 \u0437\u0432\u0435\u0440\u043d\u0456\u0442\u044c\u0441\u044f \u0434\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u0438.',
+        ].join('\n'))
+        app.log.info({ orderId: order.id }, 'Order CANCELLED (from webhook data)')
+        return
+      }
+
+      // Фетчимо актуальний статус з Poster API
       try {
         const url = 'https://' + p.account + '.joinposter.com/api/incomingOrders.getIncomingOrder?token=' + location.posterToken + '&incoming_order_id=' + posterOrderId
         const res = await fetch(url)
         const data = await res.json() as any
         const posterStatus = Number(data?.response?.status ?? 0)
         const transactionId = data?.response?.transaction_id
-        app.log.info({ posterStatus, transactionId, orderId: order.id }, 'Poster incoming_order status')
+        app.log.info({ posterStatus, transactionId, orderId: order.id }, 'Poster incoming_order status fetched')
 
-        if (posterStatus === 7 && !transactionId) {
+        // status 4 або 7 без транзакції = скасовано
+        if ((posterStatus === 4 || posterStatus === 7) && !transactionId) {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
           await tgSend(String(order.user.telegramId), [
             '\u274c *\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e*',
@@ -295,7 +347,7 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
             '\u0421\u043a\u043e\u0440\u043e \u0431\u0443\u0434\u0435 \u0433\u043e\u0442\u043e\u0432\u043e \u2014 \u0447\u0435\u043a\u0430\u0439\u0442\u0435!',
           ].join('\n'))
           app.log.info({ orderId: order.id }, 'Order PREPARING')
-        } else if ((posterStatus === 4 || posterStatus === 5) && ['SENT_TO_POS', 'ACCEPTED', 'PREPARING'].includes(order.status)) {
+        } else if (posterStatus === 5 && ['SENT_TO_POS', 'ACCEPTED', 'PREPARING'].includes(order.status)) {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'READY' } })
           await tgSend(String(order.user.telegramId), [
             '\ud83c\udf89 *\u0412\u0430\u0448\u0435 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0433\u043e\u0442\u043e\u0432\u0435!*',
@@ -303,7 +355,7 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
           ].join('\n'))
           app.log.info({ orderId: order.id }, 'Order READY')
         } else {
-          app.log.info({ posterStatus, transactionId }, 'No matching transition')
+          app.log.info({ posterStatus, transactionId, orderId: order.id }, 'No status transition applied')
         }
       } catch (e) {
         app.log.error({ err: String(e) }, 'Error checking Poster order status')
