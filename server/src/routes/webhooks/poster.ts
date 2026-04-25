@@ -276,12 +276,32 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
 
         if (posterStatus === 7 && !transactionId) {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
-          await tgSend(String(order.user.telegramId), '\u274c Zamovlennya #' + order.id + ' skasovano barysteyu.')
+          await tgSend(String(order.user.telegramId), [
+            '\u274c *\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e*',
+            '\u0411\u0430\u0440\u0438\u0441\u0442\u0430 \u0432\u0456\u0434\u043c\u0456\u043d\u0438\u0432 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f. \u042f\u043a\u0449\u043e \u0446\u0435 \u043f\u043e\u043c\u0438\u043b\u043a\u0430 \u2014 \u0437\u0432\u0435\u0440\u043d\u0456\u0442\u044c\u0441\u044f \u0434\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u0438.',
+          ].join('\n'))
           app.log.info({ orderId: order.id }, 'Order CANCELLED')
         } else if (posterStatus === 2 && order.status === 'SENT_TO_POS') {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'ACCEPTED' } })
-          await tgSend(String(order.user.telegramId), '\u2615 Zamovlennya #' + order.id + ' prynyato! Hotuyemo...')
+          await tgSend(String(order.user.telegramId), [
+            '\u2615 *\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u043f\u0440\u0438\u0439\u043d\u044f\u0442\u043e!*',
+            '\u0411\u0430\u0440\u0438\u0441\u0442\u0430 \u043f\u043e\u0447\u0438\u043d\u0430\u0454 \u0433\u043e\u0442\u0443\u0432\u0430\u0442\u0438 \u0432\u0430\u0448\u0435 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f \u2615',
+          ].join('\n'))
           app.log.info({ orderId: order.id }, 'Order ACCEPTED')
+        } else if (posterStatus === 3 && ['SENT_TO_POS', 'ACCEPTED'].includes(order.status)) {
+          await prisma.order.update({ where: { id: order.id }, data: { status: 'PREPARING' } })
+          await tgSend(String(order.user.telegramId), [
+            '\u2615 *\u0413\u043e\u0442\u0443\u0454\u043c\u043e \u0432\u0430\u0448\u0435 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + '*',
+            '\u0421\u043a\u043e\u0440\u043e \u0431\u0443\u0434\u0435 \u0433\u043e\u0442\u043e\u0432\u043e \u2014 \u0447\u0435\u043a\u0430\u0439\u0442\u0435!',
+          ].join('\n'))
+          app.log.info({ orderId: order.id }, 'Order PREPARING')
+        } else if ((posterStatus === 4 || posterStatus === 5) && ['SENT_TO_POS', 'ACCEPTED', 'PREPARING'].includes(order.status)) {
+          await prisma.order.update({ where: { id: order.id }, data: { status: 'READY' } })
+          await tgSend(String(order.user.telegramId), [
+            '\ud83c\udf89 *\u0412\u0430\u0448\u0435 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0433\u043e\u0442\u043e\u0432\u0435!*',
+            '\u041f\u0456\u0434\u0456\u0439\u0434\u0456\u0442\u044c \u0434\u043e \u043a\u0430\u0441\u0438 \u0456 \u0437\u0430\u0431\u0435\u0440\u0456\u0442\u044c \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f',
+          ].join('\n'))
+          app.log.info({ orderId: order.id }, 'Order READY')
         } else {
           app.log.info({ posterStatus, transactionId }, 'No matching transition')
         }
