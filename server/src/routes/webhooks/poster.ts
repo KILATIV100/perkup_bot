@@ -43,6 +43,29 @@ function buildReceipt(orderId: number, locationName: string, itemLines: string, 
   ].join('\n')
 }
 
+function toNum(v: any): number | null {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function extractDeterministicPosterOrderIdFromTransactionChanged(payload: any): number | null {
+  const candidates = [
+    payload?.incoming_order_id,
+    payload?.incomingOrderId,
+    payload?.data?.incoming_order_id,
+    payload?.data?.incomingOrderId,
+    payload?.value_text?.incoming_order_id,
+    payload?.value_text?.incomingOrderId,
+    payload?.transactions_history?.incoming_order_id,
+    payload?.transactions_history?.incomingOrderId,
+  ]
+  for (const c of candidates) {
+    const parsed = toNum(c)
+    if (parsed && parsed > 0) return parsed
+  }
+  return null
+}
+
 async function findUserByPosterTransaction(subdomain: string, token: string, transactionId: number, log: any): Promise<{ normalizedPhone: string | null; userId: number | null; telegramId: bigint | null }> {
   try {
     const url = 'https://' + subdomain + '.joinposter.com/api/transactions.getTransactionById?token=' + token + '&transaction_id=' + transactionId
@@ -152,21 +175,60 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
     reply.send({ success: true })
 
     const p = req.body as any
-    app.log.info({ object: p.object, action: p.action, object_id: p.object_id, account: p.account }, 'Poster webhook received')
+    app.log.info({
+      event: 'POSTER_WEBHOOK_INTAKE',
+      object: p?.object || null,
+      action: p?.action || null,
+      object_id: p?.object_id ?? null,
+      account: p?.account || null,
+      hasAccount: Boolean(p?.account),
+      hasObjectId: p?.object_id !== undefined && p?.object_id !== null,
+    }, 'POSTER_WEBHOOK_INTAKE')
 
-    if (!p.account || !p.object_id) return
+    if (!p.account || !p.object_id) {
+      app.log.info({
+        event: 'POSTER_BRANCH_IGNORED',
+        reason: 'missing_account_or_object_id',
+        object: p?.object || null,
+        action: p?.action || null,
+        account: p?.account || null,
+        object_id: p?.object_id ?? null,
+      }, 'POSTER_BRANCH_IGNORED')
+      return
+    }
 
     const location = await prisma.location.findFirst({
       where: { posterSubdomain: p.account, hasPoster: true },
     })
-    if (!location) { app.log.warn({ account: p.account }, 'Location not found'); return }
+    app.log.info({
+      event: 'POSTER_WEBHOOK_LOCATION_MATCH',
+      account: p.account,
+      matched: Boolean(location),
+      locationId: location?.id || null,
+      locationSlug: location?.slug || null,
+      hasPoster: location?.hasPoster || false,
+    }, 'POSTER_WEBHOOK_LOCATION_MATCH')
+    if (!location) {
+      app.log.warn({
+        event: 'POSTER_BRANCH_IGNORED',
+        reason: 'location_not_found',
+        account: p.account,
+        object: p.object,
+        action: p.action,
+        object_id: p.object_id,
+      }, 'POSTER_BRANCH_IGNORED')
+      return
+    }
 
-    // ─── INCOMING ORDER CLOSED = оплачено і завершено ────────────────
-    // Poster надсилає incoming_order:closed ОДНОЧАСНО з transaction:closed
-    // Це найнадійніший спосіб зв'язати замовлення (по posterOrderId)
-    if (p.object === 'incoming_order' && p.action === 'closed') {
-      const posterOrderId = Number(p.object_id)
-      app.log.info({ posterOrderId }, 'incoming_order CLOSED = order paid')
+    // TRANSACTION CLOSED = paid
+    if (p.object === 'transaction' && p.action === 'closed') {
+      app.log.info({
+        event: 'POSTER_BRANCH_TRANSACTION_CLOSED',
+        account: p.account,
+        object_id: p.object_id,
+        locationId: location.id,
+      }, 'POSTER_BRANCH_TRANSACTION_CLOSED')
+      app.log.info({ transactionId: p.object_id }, 'Transaction CLOSED = PAID')
 
       const onlineOrder = await prisma.order.findFirst({
         where: { posterOrderId, locationId: location.id },
@@ -285,6 +347,12 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
     //   5 = готово (ready)
     //   7 = видалено (deleted, теж cancelled)
     if (p.object === 'incoming_order' && p.action === 'changed') {
+      app.log.info({
+        event: 'POSTER_BRANCH_INCOMING_ORDER_CHANGED',
+        account: p.account,
+        object_id: p.object_id,
+        locationId: location.id,
+      }, 'POSTER_BRANCH_INCOMING_ORDER_CHANGED')
       if (!location.posterToken) return
 
       const posterOrderId = Number(p.object_id)
@@ -292,8 +360,6 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
         where: { posterOrderId, locationId: location.id },
         include: { user: true },
       })
-      if (!order) { app.log.warn({ posterOrderId }, 'Online order not found for incoming_order:changed'); return }
-      if (['CANCELLED', 'COMPLETED'].includes(order.status)) return
 
       // Перевіряємо data з webhook — чи є там changeorderstatus з value=4 (cancelled)
       let cancelFromData = false
@@ -323,16 +389,30 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
         const data = await res.json() as any
         const posterStatus = Number(data?.response?.status ?? 0)
         const transactionId = data?.response?.transaction_id
-        app.log.info({ posterStatus, transactionId, orderId: order.id }, 'Poster incoming_order status fetched')
+        app.log.info({
+          posterOrderId,
+          perkupOrderFound: Boolean(order),
+          currentOrderStatus: order?.status || null,
+          posterStatus,
+          transactionId,
+        }, 'Poster incoming_order changed lookup')
 
-        // status 4 або 7 без транзакції = скасовано
-        if ((posterStatus === 4 || posterStatus === 7) && !transactionId) {
+        if (!order) {
+          app.log.warn({ posterOrderId, posterStatus, transactionId }, 'PerkUp order not found for incoming_order changed')
+          return
+        }
+        if (['CANCELLED', 'COMPLETED'].includes(order.status)) {
+          app.log.info({ orderId: order.id, currentOrderStatus: order.status }, 'Skipping incoming_order change for terminal order')
+          return
+        }
+
+        if (posterStatus === 7) {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
           await tgSend(String(order.user.telegramId), [
             '\u274c *\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e*',
             '\u0411\u0430\u0440\u0438\u0441\u0442\u0430 \u0432\u0456\u0434\u043c\u0456\u043d\u0438\u0432 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f. \u042f\u043a\u0449\u043e \u0446\u0435 \u043f\u043e\u043c\u0438\u043b\u043a\u0430 \u2014 \u0437\u0432\u0435\u0440\u043d\u0456\u0442\u044c\u0441\u044f \u0434\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u0438.',
           ].join('\n'))
-          app.log.info({ orderId: order.id }, 'Order CANCELLED')
+          app.log.info({ orderId: order.id, posterOrderId, posterStatus, transactionId }, 'Order CANCELLED from incoming_order status=7')
         } else if (posterStatus === 2 && order.status === 'SENT_TO_POS') {
           await prisma.order.update({ where: { id: order.id }, data: { status: 'ACCEPTED' } })
           await tgSend(String(order.user.telegramId), [
@@ -363,8 +443,84 @@ export default async function posterWebhookRoutes(app: FastifyInstance) {
       return
     }
 
+    // TRANSACTION CHANGED (changeorderstatus) = fallback cancel signal
+    if (p.object === 'transaction' && p.action === 'changed') {
+      app.log.info({
+        event: 'POSTER_BRANCH_TRANSACTION_CHANGED',
+        account: p.account,
+        object_id: p.object_id,
+        locationId: location.id,
+        type_history: p?.transactions_history?.type_history || p?.data?.type_history || null,
+      }, 'POSTER_BRANCH_TRANSACTION_CHANGED')
+      const historyType = String(p?.transactions_history?.type_history || p?.data?.type_history || '')
+      const value = toNum(p?.transactions_history?.value ?? p?.value)
+      const value2 = toNum(p?.transactions_history?.value2 ?? p?.value2)
+
+      if (historyType !== 'changeorderstatus' || value !== 4 || value2 !== 5) return
+
+      const posterOrderId = extractDeterministicPosterOrderIdFromTransactionChanged(p)
+      if (!posterOrderId) {
+        app.log.info({
+          transactionId: p.object_id,
+          historyType,
+          value,
+          value2,
+        }, 'Skip fallback cancel: no deterministic incoming_order_id in transaction payload')
+        return
+      }
+
+      const order = await prisma.order.findFirst({
+        where: { posterOrderId, locationId: location.id },
+        include: { user: true },
+      })
+      if (!order) {
+        app.log.warn({ posterOrderId, transactionId: p.object_id }, 'Skip fallback cancel: PerkUp order not found')
+        return
+      }
+      if (['CANCELLED', 'COMPLETED'].includes(order.status)) {
+        app.log.info({ orderId: order.id, currentOrderStatus: order.status }, 'Skip fallback cancel: order already terminal')
+        return
+      }
+
+      await prisma.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } })
+      await tgSend(String(order.user.telegramId), [
+        '\u274c *\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f #' + order.id + ' \u0441\u043a\u0430\u0441\u043e\u0432\u0430\u043d\u043e*',
+        '\u0411\u0430\u0440\u0438\u0441\u0442\u0430 \u0432\u0456\u0434\u043c\u0456\u043d\u0438\u0432 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f. \u042f\u043a\u0449\u043e \u0446\u0435 \u043f\u043e\u043c\u0438\u043b\u043a\u0430 \u2014 \u0437\u0432\u0435\u0440\u043d\u0456\u0442\u044c\u0441\u044f \u0434\u043e \u0431\u0430\u0440\u0438\u0441\u0442\u0438.',
+      ].join('\n'))
+      app.log.info({ orderId: order.id, posterOrderId, transactionId: p.object_id }, 'Order CANCELLED from transaction changeorderstatus fallback')
+      return
+    }
+
     if (p.object === 'incoming_order' && p.action === 'added') {
       app.log.info({ posterOrderId: p.object_id }, 'incoming_order added - already tracked')
+      app.log.info({
+        event: 'POSTER_BRANCH_IGNORED',
+        reason: 'incoming_order_added',
+        account: p.account,
+        object_id: p.object_id,
+        locationId: location.id,
+      }, 'POSTER_BRANCH_IGNORED')
+      return
     }
+
+    if (p.object === 'incoming_order' && p.action === 'closed') {
+      app.log.info({
+        event: 'POSTER_BRANCH_INCOMING_ORDER_CLOSED',
+        account: p.account,
+        object_id: p.object_id,
+        locationId: location.id,
+      }, 'POSTER_BRANCH_INCOMING_ORDER_CLOSED')
+      return
+    }
+
+    app.log.info({
+      event: 'POSTER_BRANCH_IGNORED',
+      reason: 'no_matching_branch',
+      account: p.account,
+      object: p.object,
+      action: p.action,
+      object_id: p.object_id,
+      locationId: location.id,
+    }, 'POSTER_BRANCH_IGNORED')
   })
 }
